@@ -9,7 +9,6 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 
 const bridge = read('src/bridge.js');
-const scheduler = read('plugins/surfcore/lib/scheduler.js');
 const index = read('plugins/surfcore/lib/index.js');
 const client = read('plugins/surfcore/lib/client.js');
 const paths = read('plugins/surfcore/lib/paths.js');
@@ -27,8 +26,6 @@ assert.match(bridge, /\/api\/memory-card\/notify/, '桥接缺少记忆卡容量�
 assert.match(bridge, /memoryCard: memoryCardPromptBlock\(\)/, 'qq_get_prompt 没有返回记忆卡');
 
 // 2) B站 调度器：每次醒来的统一上下文里有记忆卡（仅 B站 公开 scope）。
-assert.match(scheduler, /memoryCardPromptBlock\('bili'\)/, 'B站调度器没有注入记忆卡');
-assert.match(scheduler, /memoryCardBlockForBili\(\)/, 'B站记忆卡块没有接进 identityContextLines');
 
 // 3) 插件：定时维护 + 控制台 API + 生命周期清理。
 assert.match(index, /startMemoryCardTimer\(\{ log: pluginLog, callBridge \}\)/, '插件没有启动记忆卡定时维护');
@@ -52,7 +49,6 @@ assert.match(store, /DEFAULT_MEMORY_CARD_CONFIG/, '合体层默认配置没有�
 
 // 5b) 全量卡只存档：桥接/调度器**不能**读它，否则「平时只加载衰减卡」就失效了。
 assert.equal(bridge.includes('MEMORY_CARD_FULL'), false, '桥接不应读取全量卡');
-assert.equal(scheduler.includes('MEMORY_CARD_FULL'), false, 'B站调度器不应读取全量卡');
 assert.match(index, /\/memory-card\/full/, '插件缺少全量卡只读路由');
 assert.match(index, /fullMemoryCardSnapshot/, '插件缺少全量卡快照');
 assert.match(client, /function FullMemoryCardPanel/, '控制台缺少全量记忆卡面板');

@@ -90,12 +90,8 @@ assert.ok(dailyOnly.text.includes('核心正文ABC'), '没有语气层时必须�
 
 // 三个注入点都必须走同一套分层逻辑，不能在 UI 分层后桥接仍读单卡。
 const bridge = fs.readFileSync(path.resolve('src/bridge.js'), 'utf8');
-const scheduler = fs.readFileSync(path.resolve('plugins/surfcore/lib/scheduler.js'), 'utf8');
-const pet = fs.readFileSync(path.resolve('plugins/surfcore/lib/pet-chat.js'), 'utf8');
-for (const [name, src] of [['bridge', bridge], ['scheduler', scheduler], ['pet', pet]]) {
-  assert.ok(src.includes('composePersonaLayers'), `${name} 没有接人格分层组合`);
-  assert.ok(src.includes('readPersonaLayerText'), `${name} 没有读人格分层文件`);
-}
+assert.ok(bridge.includes('composePersonaLayers'), 'bridge 没有接人格分层组合');
+assert.ok(bridge.includes('readPersonaLayerText'), 'bridge 没有读人格分层文件');
 assert.ok(bridge.includes('currentRoleHintV2(key, personaMode)'), 'QQ qq_get_prompt 必须按会话 key + 人格模式选场景');
 assert.ok(bridge.includes('currentRoleHint(key, personaMode)'), 'QQ 角色提示必须按会话 key + 人格模式选场景');
 assert.ok(bridge.includes('personaSceneFromKey'), 'QQ 没有按群聊/私聊选择场景');
@@ -105,15 +101,9 @@ const { buildPersonaIdentity } = await import('../src/persona-identity.js');
 const idLine = buildPersonaIdentity({ name: '小咪', owner: '雨雨' });
 assert.ok(idLine.includes('你是小咪') && idLine.includes('雨雨'), '身份句包含角色与主人');
 assert.ok(buildPersonaIdentity({}).includes('这个角色'), '缺省角色名有兜底');
-for (const [name, src] of [['bridge', bridge], ['scheduler', scheduler], ['pet', pet]]) {
-  assert.ok(/buildPersonaIdentity\(/.test(src) || name === 'bridge', `${name} 没有注入身份底座`);
-  assert.ok(/identity:/.test(src), `${name} 的 compose 调用必须传 identity`);
-}
-assert.ok(scheduler.includes('identity: buildPersonaIdentity('), 'B站 提示词必须带身份底座');
-assert.ok(pet.includes('identity: buildPersonaIdentity('), '桌宠 提示词必须带身份底座');
+assert.ok(/buildPersonaIdentity\(/.test(bridge), 'bridge 没有注入身份底座');
+assert.ok(/identity:/.test(bridge), 'bridge 的 compose 调用必须传 identity');
 // 语气层也要跟着走：不能只有 QQ 用语气，B站/桌宠还是干巴巴的人设。
-assert.ok(scheduler.includes("tone: readPersonaLayerText('tone')"), 'B站 提示词必须带语气层');
-assert.ok(pet.includes("tone: readPersonaLayerText('tone')"), '桌宠 提示词必须带语气层');
 
 // 回归（2026-10-31）：保存全部不能把语气层写进人格核心。
 {

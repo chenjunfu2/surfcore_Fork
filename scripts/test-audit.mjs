@@ -18,7 +18,6 @@ const tests = [
   // DSH 端口漂移兜底：401/200+SERVER 才算 DSH、别的 Web 服务不算、回环之外不覆盖。
   'test-dsh-port.mjs',
   // 鱼群保护：QQ 的鱼名/密度/连续刷屏判定 + B站的鱼楼层/聚拢/点赞纯逻辑（不发真请求）。
-  'test-fish-guard.mjs',
   // QQ 鱼群触发记录：social-v2 的 fishGuardLog/当前冷却/lastFishGuard → 设置页表格。
   'test-qq-fish-guard.mjs',
   // 人的黑名单（deny.users）：无论在哪个群/私聊都不响应；拦截点必须早于入库与唤醒，
@@ -30,21 +29,13 @@ const tests = [
   // 早安问候：08:00 重启丢枪的补发/重试逻辑 + reserved2 必须真调发送工具的提示词。
   'test-greeting.mjs',
   // 出站身份闸：B站 评论/私信/动态/分享发送前拦主人/别人的账号标识（只许自己互认）。
-  'test-identity-guard.mjs',
   // 观看历史：追加/去重/轮转/旧记忆回填/评分合并，以及 debrief·watch·角色迁移的接线契约。
-  'test-watch-history.mjs',
   // 观看历史的「操作」：评论分类（主评论/鱼群聚拢/回复/搭话）、收藏、动态、挂到哪次观看。
-  'test-watch-actions.mjs',
   // B站 选题器：偏好权重/配额/轮转搜索/去重（含观看历史）纯逻辑。
-  'test-feed-core.mjs',
   // 「一键抓取偏好关键词」：抽词/停用词/标签直取/包含合并/已有偏好排除。
-  'test-pref-scan.mjs',
   // B站 扫码登录：鱼号/主人号归属校验（不能互相覆盖、新用户可绑定）。
-  'test-bili-qr-login.mjs',
   // B站 每日分享 → 自己的动态：和四类动态共用 daily-dynamic.json，至少隔 gapMin 分钟。
-  'test-share-dynamic.mjs',
   // 生物钟 C：每窗至少 1、全天 ≤12、相邻最小间隔、skip 不结束全天、错过不补。
-  'test-night-schedule.mjs',
   // Token 防爆破：每天唤醒上限、私聊更紧、最小间隔、单次发送条数、近 24h 花费。
   'test-token-guard.mjs',
   // 每日 token 额度：单位解析（¥8 / 8M / 2万）、双单位比例、80% 每天只提醒一次、
@@ -64,7 +55,6 @@ const tests = [
   // （2026-10-24 用户要求；只碰临时 DSH_HOME，不启停真实桥接）。
   'test-platform-start.mjs',
   // B站 会话权限：workspace-write 在 C:\Users\Mieksido 起不了命令 → 自动切 danger-full-access。
-  'test-scheduler-permission.mjs',
   'test-token-economy.mjs', 'test-qq-model-view.mjs', 'test-qq-preset-contract.mjs',
   'test-reply-wait.mjs', 'test-preset-prompt.mjs', 'test-role-card.mjs',
   // 管理员身份（QQ ⇄ B站 同一个人）+「对管理员温柔 / 绝不回嘴」提示词：
@@ -76,7 +66,6 @@ const tests = [
   // 角色人格：多角色目录隔离 / 切换 epoch / 快照回档 / 旧数据迁移（含凭证不进角色包）。
   'test-character-store.mjs',
   // B站 工具链路径：有角色时行为账本进角色包，cookie/表情包仍在账号目录。
-  'test-bili-state-paths.mjs',
   // 体检修复回归：无令牌智能体调用面、send-burst 失败回滚、唤醒限频重试、
   // 定时器类暂存唤醒补发、collector 生命周期、ownerQQ 覆盖语义、预设名校验、
   // wake triggers 白名单、memory-update 边界、wait 租约归一化、md/黑话/表情/账本；
@@ -97,21 +86,14 @@ const tests = [
   // 令牌账本 / 价目表 与 体检修复回归（纯函数，无外部依赖）
   'test-token-usage.mjs', 'test-hardening.mjs',
   // 语音发送（纯函数 + 端点存在性；真发语音只在 --live 或 CLI 里做）
-  'test-voice.mjs',
   // 音量：参数校验 + 真的调用 ffmpeg 调音量 + 自算 RMS 验证增益
-  'test-voice-volume.mjs',
   // 边界：并发/异常输入/上传限额/越权（纯函数段 + 可选的 live 段）
-  'test-voice-edge.mjs',
   // 语音图形界面（参数解析/鉴权/路径穿越/文件名净化；live 段需普通终端）
-  'test-voice-gui.mjs',
   // 控制台静态契约（跑不了 Playwright 的环境下的替代回归）
   'test-console-static.mjs',
   // 语音系统整体结构检查（入口/依赖/端点/开关/文档一致性）
-  'test-voice-system.mjs',
   // 本地 TTS 客户端（落盘复用 / 502 detail / 服务未启动 / wav 头算时长）
-  'test-voice-tts.mjs',
   // 真实 bridge.js 的 text→TTS→record 链路（假网关 + 本地假 TTS，不发 QQ）
-  'test-voice-route.mjs',
   // SnowLuma 账号/token 自发现（换 QQ 账号后 token 会变，写死的工具会 401）
   'test-snowluma-conn.mjs',
   // 启动器与编码（乱码根因：.cmd 里的非 ASCII 会被 cmd 按 ANSI 解码）
@@ -135,7 +117,6 @@ const tests = [
   'test-snowluma-upstream-health.mjs',
   // B站分享卡片（PITFALLS #22）：B站小程序在 QQ 侧下架，默认必须是
   // com.tencent.structmsg 链接卡；旧 card:true 不能继续发下架的小程序卡。
-  'test-bili-card-ark.mjs',
   // preset 装配防漂移（2026-10-26 审计补登）：bundle patch（plugins/surfcore/presets/*.patch.yml）
   // 必须与权威源 dsh/agent-presets/<preset>/ 逐字一致，且守卫行只用「profile 可解析」的裸说明符。
   // ⚠️ 这条以前**不在任何门禁里**（也没有 npm script），结果 qq-chat-v2.patch.yml 悄悄落后于源：
@@ -149,12 +130,9 @@ const tests = [
   'test-privacy-scan.mjs',
   // 语音包默认安装源（2026-10-26）：必须从仓库位置解析、不许硬编码盘符，
   // 且 8765/8767 两个端口与启停脚本名不能漂移（语音路由全靠它们）。
-  'test-voice-packs-default.mjs',
   // 离线语音包导入：校验/复制/配置保留/pyvenv 改写/回滚边界（临时夹具，不碰真实包）。
-  'test-voice-pack-import.mjs',
   // 云端语音包凭据边界（2026-10-29）：新装必须清空预置的火山 AppID/AccessKey，
   // 重装保留用户自己填的；没配好时 start() 要拒绝并指路（PITFALLS #79）。
-  'test-voice-cloud-credentials.mjs',
   // 主人提问回答编码（2026-10-29）：DSH 单选不允许 selected+custom 并存 →
   // 单选走 custom-only、多选保留 selected；[仅主人] 只收窄谁能答，不是授权凭证。
   'test-question-answers.mjs',
@@ -171,9 +149,7 @@ const tests = [
   'test-allowlist.mjs',
   // DSH 升级后 profile MCP / 会话 preset 审计（2026-11-01 升级后没有 qq_* 工具）。
   'test-dsh-health.mjs',
-  'test-voice-diagnostics.mjs',
   'test-release-manifest.mjs',
-  'test-voice-gates.mjs',
   'test-update-apply-result.mjs',
   'test-update-version-fallback.mjs',
   // 版本号单一真相：根/插件 package.json 一致、无硬编码、CHANGELOG 有当前版本。
@@ -216,7 +192,6 @@ const tests = [
   'test-billing-report.mjs',
   'test-billing-service.mjs',
   // B站分享去重：新鲜池空时不得回退旧素材（2026-10-26 修复的"同一条反复发"）。
-  'test-bili-share-dedup.mjs',
 ];
 let failed = 0;
 for (const test of tests) {

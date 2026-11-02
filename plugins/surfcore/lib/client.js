@@ -595,45 +595,23 @@ window.__ModuleLoader__.load({
 
     function AdminCard({ admin, onChange, qqPrivate = [], qqAllowAll = false, toast }) {
       const [auditOpen, setAuditOpen] = useState(false);
-      const [uidCheck, setUidCheck] = useState(null); // {ok, match, actualName, error, hint}
-      const [uidChecking, setUidChecking] = useState(false);
       const value = admin && typeof admin === "object" ? admin : {};
       const set = (key, next) => onChange({ ...value, [key]: next });
-      const configured = Boolean(value.qq || value.biliMid || value.biliName);
-      const aligned = Boolean(value.qq && value.biliMid);
+      const configured = Boolean(value.qq);
       const privateList = (Array.isArray(qqPrivate) ? qqPrivate : []).map(String);
       const blockedPrivate = Boolean(value.qq) && !qqAllowAll && !privateList.includes(String(value.qq));
-      const badge = aligned ? "ok" : configured ? "warn" : "bad";
-      const badgeText = aligned ? "同一个人 ✓" : configured ? "只填了一边" : "未设置";
+      const badge = configured ? "ok" : "bad";
+      const badgeText = configured ? "已设置" : "未设置";
       const digits = (next) => String(next ?? "").replace(/[^\d]/g, "");
-      // 核查 UID 与昵称是否同一个人：查 B站 公开名片，把真实昵称带回来比对。
-      const checkUid = async () => {
-        const mid = String(value.biliMid ?? "").trim();
-        if (!/^\d{4,20}$/.test(mid)) {
-          setUidCheck({ ok: false, error: "B站 UID 必须是 4~20 位数字", hint: "个人空间地址 space.bilibili.com/<数字> 里的那串数字" });
-          return;
-        }
-        setUidChecking(true); setUidCheck(null);
-        try {
-          const r = await api("/bili/verify-user", { method: "POST", body: { mid, name: String(value.biliName ?? "").trim() } });
-          setUidCheck(r);
-          if (r.ok && r.match) toast(`✓ UID 与昵称一致：${r.actualName}（${r.mid}）`);
-          else if (r.ok && !r.match) toast(`✗ 昵称对不上：B站 是「${r.actualName}」`);
-          else toast(`✗ ${r.error || "核查失败"}`);
-        } catch (e) {
-          setUidCheck({ ok: false, error: e.message, hint: "检查网络能否访问 api.bilibili.com；稍后重试" });
-          toast(`✗ 核查失败：${e.message}`);
-        } finally { setUidChecking(false); }
-      };
       return h("div", { className: "qbw-admin" },
         h("div", { className: "qbw-admin-head" },
           h("div", null,
             h("div", { className: "qbw-admin-title" },
-              "管理员（QQ ⇄ B站 · 同一个人）",
+              "管理员",
               h("span", { className: "qbw-badge " + badge }, badgeText),
               h("span", { className: "qbw-pill" }, "对 TA 温柔 · 不回嘴")),
             h("div", { className: "qbw-hint" },
-              "默认就是同一个人：这里填一次，QQ 的 ownerQQ 和 B站 的 owner.mid 会同时写成这两个号（QQ 侧保存后需重启桥接，B站 下一轮生效）。"))),
+              "这个 QQ 同时用于审批、管理命令、封闭模式；保存后需重启桥接生效。"))),
         h("div", { className: "qbw-admin-grid" },
           h("label", { className: "qbw-admin-field" },
             h("span", null, "管理员 QQ"),
@@ -644,46 +622,13 @@ window.__ModuleLoader__.load({
             }),
             h("small", null, "审批、管理命令、封闭模式都用这个 QQ")),
           h("label", { className: "qbw-admin-field" },
-            h("span", null, "管理员 B站 UID（mid）"),
-            h("input", {
-              className: "qbw-input", inputMode: "numeric", placeholder: "例如 37634003",
-              value: value.biliMid ?? "",
-              onChange: (e) => set("biliMid", digits(e.target.value)),
-            }),
-            h("small", null, "B站 评论区 / 私信 / 直播间认主用这个 mid（4~20 位数字）"),
-            h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "6px", flexWrap: "wrap" } },
-              h(Btn, { kind: "qbw-btn2", onClick: checkUid, disabled: uidChecking || !String(value.biliMid ?? "").trim() },
-                uidChecking ? "核查中…" : "核查 UID 与昵称"),
-              uidCheck
-                ? h("span", { className: "qbw-hint", style: { color: uidCheck.ok ? (uidCheck.match ? "#67c23a" : "#e6a23c") : "#c0392b" } },
-                  uidCheck.ok
-                    ? (uidCheck.match
-                      ? `✓ 同一个人：${uidCheck.actualName}（${uidCheck.mid}）`
-                      : `⚠ B站 上的昵称是「${uidCheck.actualName}」`)
-                    : `✗ ${uidCheck.error || "核查失败"}`)
-                : null),
-            uidCheck && uidCheck.ok && !uidCheck.match
-              ? h(Btn, { kind: "qbw-btn2", onClick: () => { set("biliName", uidCheck.actualName || ""); setUidCheck({ ...uidCheck, match: true, inputName: uidCheck.actualName }); } }, "用 B站 昵称填上")
-              : null,
-            uidCheck && !uidCheck.ok && uidCheck.hint
-              ? h("small", null, `建议：${uidCheck.hint}`)
-              : null),
-          h("label", { className: "qbw-admin-field" },
             h("span", null, "怎么称呼 TA"),
             h("input", {
-              className: "qbw-input", placeholder: "留空就用 B站 昵称",
+              className: "qbw-input", placeholder: "例如 主人",
               value: value.displayName ?? "",
               onChange: (e) => set("displayName", e.target.value),
             }),
-            h("small", null, "人格卡和提示词里都用这个称呼")),
-          h("label", { className: "qbw-admin-field" },
-            h("span", null, "B站 昵称"),
-            h("input", {
-              className: "qbw-input", placeholder: "例如 你的B站昵称",
-              value: value.biliName ?? "",
-              onChange: (e) => set("biliName", e.target.value),
-            }),
-            h("small", null, "B站 提示词里用来认人"))),
+            h("small", null, "人格卡和提示词里都用这个称呼"))),
         h("div", { className: "qbw-admin-foot" },
           h("label", { className: "qbw-admin-check" },
             h("input", {
@@ -692,12 +637,9 @@ window.__ModuleLoader__.load({
               onChange: (e) => set("gentle", e.target.checked),
             }),
             h("span", null, "对管理员更温柔、绝不回嘴")),
-          h("span", { className: "qbw-hint" }, "QQ 消息和 B站 回复都适用；关掉 = 只按人格卡。")),
+          h("span", { className: "qbw-hint" }, "关掉 = 只按人格卡。")),
         blockedPrivate
           ? h("div", { className: "qbw-warnbox" }, "⚠️ 管理员 QQ 不在私聊白名单 allow.private 里：私聊会被拦截（白名单为空时也没人放行）。去下面的「QQ 白名单」把 TA 加进去。")
-          : null,
-        configured && !aligned
-          ? h("div", { className: "qbw-warnbox" }, "⚠️ 只填了一边：QQ 和 B站 要分别是同一个人的两个号，两边才都认得出。")
           : null,
         h("div", { className: "qbw-actions", style: { marginTop: "8px" } },
           h(Btn, { kind: "qbw-btn3", onClick: () => setAuditOpen(true) }, "管理操作记录（最近 50 条）")),
@@ -1187,144 +1129,6 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
       { title: "其他", members: null },
     ];
 
-    const BILI_ADV_CATEGORIES = [
-      { title: "身份与权限", members: ["她自己（只读）", "B站 会话权限"] },
-      { title: "内容与口味", members: ["口味（文本）", "四类动态", "鱼群判定关键词（B站）", "鱼群保护（B站）"] },
-      { title: "作息与分享", members: ["作息", "分享", "倾听（别人找她）", "日记与推送"] },
-      { title: "额度与工具", members: ["额度（代码闸门）", "工具链"] },
-      { title: "其他", members: null },
-    ];
-
-    // B站 → QQ 自动分享（写根 config.json 的 biliBridge；保存后重启桥接生效）。
-    const QQ_BILI_SHARE_FIELDS = [
-      F("biliBridge.enabled", "启用 B站 桥接", "", "switch"),
-      F("biliBridge.share.enabled", "启用定时视频分享", "每天按下面的时间点给群发 B站 视频卡片", "switch"),
-      F("biliBridge.share.times", "分享时间点", "HH:MM，逗号分隔；默认 07/11/13/15/17/19/21/23", "times"),
-      F("biliBridge.share.groups", "只发这些群", "留空 = 跟随 allow.groups", "list"),
-      F("biliBridge.share.gapMs", "卡片到短评的间隔（ms）", "默认 4000", "number", { min: 0, max: 60000 }),
-      F("biliBridge.share.cardMode", "分享形式", "文本链接 = 标题 + 链接两条消息（推荐：QQ 不显示第三方卡片，会提示「发送者版本过低」）；小程序卡片点了会提示「小程序已下架」", "select", {
-        options: [["text", "文本链接（推荐）"], ["miniapp", "小程序卡片（已下架，不推荐）"], ["off", "不发卡片（链接由短评带）"]],
-      }),
-      F("biliBridge.dynamics.enabled", "B站新动态同步到 QQ", "", "switch"),
-      F("biliBridge.dynamics.pollIntervalMs", "动态轮询间隔（ms）", "默认 180000（3 分钟）", "number", { min: 60000, max: 3600000 }),
-      F("biliBridge.dynamics.groups", "动态只发这些群", "留空 = 跟随 allow.groups", "list"),
-    ];
-
-    const BILI_FIELDS = [
-      { group: "她自己（只读）", note: "管理员（主人）的 QQ 与 B站 mid 在标签页顶部统一设置 →", fields: [
-        // owner.mid / owner.name 不在这里：已上移到「管理员」卡片，和 QQ 号一起保存。
-        F("self.mid", "她自己 mid", "只读（来自 cookie / nav）", "text", { readOnly: true }),
-        F("self.name", "她自己昵称", "只读（来自 nav）", "text", { readOnly: true }),
-      ]},
-      { group: "作息", note: "生物钟窗口", fields: [
-        F("night.skipChance", "今晚不看的概率", "0.3 = 三成；轻醒只结束当前 slot，不结束全天", "number", { min: 0, max: 0.95, step: 0.01 }),
-        F("night.maxVideos", "单次初筛视频数", "", "number", { min: 1, max: 20 }),
-        F("night.maxWakesPerDay", "每天最多醒来", "0~12；C 模式：每窗至少 1 次，剩余按该时段评分分配", "number", { min: 0, max: 12 }),
-        F("night.minGapMin", "两次苏醒最小间隔（分钟）", "默认 20；相邻窗口也按这个错开；太小会低质量空跑", "number", { min: 0, max: 120 }),
-      ]},
-      { group: "口味（文本）", note: "逗号分隔；单个关键词的权重在下面「口味权重 / 一键抓取」里调", fields: [
-        F("preferences.like", "爱看", "逗号分隔；喂给选题器", "list"),
-        F("preferences.dislike", "不爱看", "逗号分隔", "list"),
-        F("preferences.keywords", "额外关键词", "逗号分隔；只扩大搜索，默认权重 0.75", "list"),
-      ]},
-      { group: "分享", fields: [
-        F("share.enabled", "开启分享", "关掉 = 只看不说", "switch"),
-        F("share.via", "分享方式", "默认发自己的动态（视频卡片）；也可评论区 @ / B站私信", "select", { options: [["dynamic", "发自己的动态（视频卡片）"], ["comment", "评论区 @ 你"], ["dm", "B站私信"]] }),
-        F("quota.shareDaily", "每天上限", "建议 ≤3；0 = 不分享", "number", { min: 0, max: 20 }),
-        F("share.minScore", "最低评分", "0~20；不到就不发", "number", { min: 0, max: 20 }),
-        F("share.silentAfterDays", "沉默几天后降额", "", "number", { min: 0 }),
-        F("share.decayPerDay", "每天降多少", "", "number", { min: 0 }),
-      ]},
-      { group: "额度（代码闸门）", note: "四本账的硬上限；0 = 不限量（关闭该上限）。保存后下一轮生效，不用重启 DSH。", fields: [
-        F("limits.daily", "普通评论 / 天", "默认 30", "number", { min: 0, max: 200 }),
-        F("limits.replyDaily", "回找我的人 / 天", "默认 50", "number", { min: 0, max: 500 }),
-        F("limits.taDaily", "主动搭话 / 天", "默认 15", "number", { min: 0, max: 200 }),
-        F("limits.mineDaily", "动态回复 / 类 / 天", "默认 10；四类各自算", "number", { min: 0, max: 100 }),
-        F("limits.minePerPerson", "动态回复 / 人 / 类 / 天", "默认 1", "number", { min: 0, max: 20 }),
-        F("limits.globalMin", "任意两条发言间隔（分钟）", "默认 2；0 = 不冷却", "number", { min: 0, max: 120 }),
-        F("limits.perUpMin", "同一 UP 冷却（分钟）", "默认 10", "number", { min: 0, max: 1440 }),
-        F("limits.perVideoMin", "同一视频冷却（分钟）", "默认 60", "number", { min: 0, max: 1440 }),
-        F("limits.perThreadMin", "同一条评论冷却（分钟）", "默认 1440（24 小时）", "number", { min: 0, max: 10080 }),
-      ]},
-      { group: "四类动态", note: "每类一天一条；时段从该类的点开始，到下一类启用的点为止。前缀留空 = 不加固定开头。", fields: [
-        F("dynamics.enabled", "四类动态总开关", "关掉 = 不再定时提醒发动态", "switch"),
-        F("dynamics.gapMin", "任意两条动态间隔（分钟）", "默认 30；5~240", "number", { min: 5, max: 240 }),
-        ...Object.entries({
-          best: "一类 · 最高分视频",
-          game: "二类 · 游戏 AI 二创",
-          anime: "三类 · 动漫",
-          gaming: "四类 · 游戏区",
-        }).flatMap(([key, label]) => [
-          F(`dynamics.kinds.${key}.enabled`, `${label} · 开关`, "", "switch"),
-          F(`dynamics.kinds.${key}.slot`, `${label} · 时段（点）`, "0~23；从该点起，到下一类启用的点", "number", { min: 0, max: 23 }),
-          F(`dynamics.kinds.${key}.minLen`, `${label} · 最短字数`, "", "number", { min: 10, max: 1000 }),
-          F(`dynamics.kinds.${key}.maxLen`, `${label} · 最长字数`, "", "number", { min: 20, max: 2000 }),
-          F(`dynamics.kinds.${key}.prefix`, `${label} · 固定开头`, "留空 = 不加前缀", "text", { wide: true }),
-        ]),
-      ]},
-      { group: "鱼群判定关键词（B站）", note: "开头 / 中间 / 结尾任一命中即算鱼；默认 肥鱼 + 结尾 fish/鱼；只要评论者昵称命中就算，不涉及视频/UP 名", fields: [
-        F("fishGuard.namePrefixes", "鱼名开头词", "逗号分隔；名字以这些词开头就算鱼（默认空，例如 DSH）", "list", { placeholder: "点击输入，例如 DSH（逗号分隔）" }),
-        F("fishGuard.nameContains", "鱼名包含词", "逗号分隔；名字里只要包含这些词就算鱼（默认 肥鱼，例如 吃白饭）", "list"),
-        F("fishGuard.nameSuffixes", "鱼名结尾词", "逗号分隔；默认 肥鱼,fish,鱼（最后一个字是鱼也算；接受极小概率误伤真人）", "list"),
-        F("fishGuard.extraFishMids", "额外认定的鱼 mid", "逗号分隔；改名了也能认出来（B站 mid）", "list"),
-        F("fishGuard.exemptNames", "豁免昵称", "逗号分隔", "list"),
-        F("fishGuard.exemptMids", "豁免 mid", "逗号分隔；主人/自己会被代码强制排除", "list"),
-      ]},
-      { group: "鱼群保护（B站）", note: "评论区鱼太多就不发新楼层；优先回鱼；给鱼点赞（只拦她自己决定的发言，下一轮醒来生效）", fields: [
-        F("fishGuard.enabled", "启用 B站鱼群保护", "关掉 = 永远发新楼层", "switch"),
-        F("fishGuard.sampleSize", "取样顶层评论数", "默认 40；看最近/最热由接口排序决定", "number", { min: 5, max: 100 }),
-        F("fishGuard.maxFishTopLevel", "多少条鱼的楼层算泛滥", "默认 3", "number", { min: 1, max: 50 }),
-        F("fishGuard.maxFishMids", "多少个鱼账号算泛滥", "默认 3；防同一只鱼刷很多楼层", "number", { min: 1, max: 50 }),
-        F("fishGuard.maxFishRatio", "鱼楼层占比阈值", "0~1；默认 0.4", "number", { min: 0, max: 1, step: 0.05 }),
-        F("fishGuard.minSample", "占比判定最少样本", "默认 8", "number", { min: 2, max: 100 }),
-        F("fishGuard.includeHotSample", "同时取热度序样本", "默认开；时间序+热度序去重，降低采样偏差", "switch"),
-        F("fishGuard.gatherEnabled", "聚拢：改成回鱼", "鱼太多时把想说的话变成对鱼评论的回复", "switch"),
-        F("fishGuard.forceGather", "每次醒来强制聚拢", "默认开；鱼群泛滥时就算没有满足条件的鱼楼，也强行挑一条回（仍受额度/冷却）", "switch"),
-        F("fishGuard.gatherMaxReplies", "只回回复少的鱼楼", "默认 ≤6 条回复", "number", { min: 0, max: 100 }),
-        F("fishGuard.gatherMaxFishReplies", "鱼楼里鱼回复太多就跳过", "默认 >2 条鱼回复不挤进去，防鱼群串", "number", { min: 0, max: 50 }),
-        F("fishGuard.gatherMaxAgeHours", "只回多新的鱼楼（小时）", "默认 72；太旧的不打扰", "number", { min: 1 }),
-        F("fishGuard.gatherCooldownHours", "同一鱼楼冷却（小时）", "默认 12；避免反复回同一条", "number", { min: 0 }),
-        F("fishGuard.likeEnabled", "点赞机制", "给鱼的楼层/楼里的鱼回复点赞", "switch"),
-        F("fishGuard.maxLikesPerDay", "每天最多点赞", "默认 6；避免像刷赞", "number", { min: 0, max: 200 }),
-        F("fishGuard.maxLikesPerRun", "每次最多点赞", "默认 4", "number", { min: 0, max: 50 }),
-        F("fishGuard.likeFishReplies", "也赞楼里的鱼回复", "默认开；让整楼的鱼一起被顶上去", "switch"),
-        F("fishGuard.likeAfterCommentMs", "发完评论等多久再点赞", "默认 12000ms；刚发完就点容易被风控", "number", { min: 0, max: 120000 }),
-        F("fishGuard.likeGapMinMs", "两次点赞最小间隔（ms）", "默认 1500；随机间隔更像真人", "number", { min: 0, max: 30000 }),
-        F("fishGuard.likeGapMaxMs", "两次点赞最大间隔（ms）", "默认 4000", "number", { min: 0, max: 60000 }),
-        F("fishGuard.failedLikeCooldownHours", "点赞失败后冷却（小时）", "默认 24；同一个 rpid 失败过就先跳过", "number", { min: 0 }),
-        F("fishGuard.failCooldownMinutes", "风控失败冷却（分钟）", "默认 60；遇到 -509/12015 等码自动停手", "number", { min: 1 }),
-      ]},
-      { group: "B站 会话权限", note: "只影响她自己的 DSH 会话（bili-whale-*），不影响 QQ 桥接；改完下一次 tick 生效", fields: [
-        F("agent.sandbox", "会话权限", "danger-full-access = 定时醒来能跑 bili.mjs（推荐；C:\\Users\\Mieksido 用 workspace-write 会因 WRITE_OWNER 起不了命令）；workspace-write = 更安全但可能什么都跑不了", "select", {
-          options: [["danger-full-access", "完全访问（推荐，能跑工具）"], ["workspace-write", "仅工作区（更安全，可能跑不了命令）"]],
-        }),
-      ]},
-      { group: "倾听（别人找她）", fields: [
-        F("listen.comment", "评论区监听", "", "switch"),
-        F("listen.commentIntervalSec", "检查间隔（秒）", "建议 ≥300", "number", { min: 60 }),
-        F("listen.scope", "监听范围", "回复我的 / 回复+@", "select", { options: [["both", "回复 + @"], ["reply", "只回复我"]] }),
-        F("listen.oncePerPerson", "同一个人最多回一条", "30 天内只回一次", "switch"),
-        F("listen.allDay", "全天监听", "关掉 = 只在她醒着的窗口里回", "switch"),
-        F("listen.dm", "私信监听", "有私信就叫醒她", "switch"),
-        F("listen.dmScope", "私信监听范围", "只认主人 / 谁找她都回", "select", { options: [["owner", "只认主人"], ["all", "谁找她都回"]] }),
-        F("listen.live", "直播间监听", "", "switch"),
-        F("listen.liveRoom", "直播间房间号", "留空 = 不蹲直播"),
-        F("listen.liveScope", "直播间只回", "只回主人 / 只回艾特她的", "select", { options: [["owner", "只回主人"], ["mention", "只回艾特她的"]] }),
-      ]},
-      { group: "日记与推送", fields: [
-        F("diary.push", "推送日记摘要", "日记照写；只控制推不推", "switch"),
-        F("diary.enabled", "写日记（锁定开）", "旧版本可关；现在照写不可关", "switch", { readOnly: true }),
-        F("notify.type", "推送方式", "不推送 / 桌面通知 / Webhook / 自定义命令", "select", { options: [["none", "不推送"], ["desktop", "桌面通知"], ["webhook", "Webhook"], ["command", "自定义命令"]] }),
-        F("notify.url", "Webhook 地址", "飞书/钉钉/企业微信/QQ机器人", "text", { wide: true }),
-        F("notify.template", "模板", "纯文本 / markdown", "select", { options: [["text", "纯文本"], ["markdown", "markdown"]] }),
-        F("notify.cmd", "自定义命令", "可执行文件；消息自动作为最后一个参数", "text", { wide: true }),
-        F("notify.args", "命令参数", "JSON 数组", "json"),
-      ]},
-      { group: "工具链", fields: [
-F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "text", { wide: true, browse: "file" }),
-      ]},
-    ];
-
     // ── 作息窗口编辑器 ──────────────────────────────────────────────────────
     const NUMS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫"];
     function WindowsEditor({ value, onChange }) {
@@ -1645,8 +1449,7 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
       const biliStart = platformStart.bili !== false;
       // ── 一键启动 / 停止（QQ+B站+桌宠+语音）────────────────────────────
       const launch = overview?.launch ?? {};
-      const [launchSel, setLaunchSel] = useState({ qq: true, bili: true, pet: false, voice: false });
-      const [voiceBranch, setVoiceBranch] = useState("voice-local");
+      const [launchSel, setLaunchSel] = useState({ qq: true });
       const [launchResult, setLaunchResult] = useState(null);
       const [launchErr, setLaunchErr] = useState(null);
       // ── 组件更新（2026-10-26）──────────────────────────────────────────
@@ -1823,7 +1626,7 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
       };
       const runLaunch = async (mode) => {
         const ids = mode === "stop"
-          ? ["qq", "bili", "pet", "voice"]
+          ? ["qq"]
           : Object.entries(launchSel).filter(([, on]) => on).map(([id]) => id);
         if (!ids.length) { toast("✗ 至少勾选一项"); return; }
         setBusy(mode === "stop" ? "launch-stop" : "launch-start");
@@ -1832,7 +1635,6 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
           const res = await api("/bridge", { method: "POST", body: {
             action: mode === "stop" ? "stop-selected" : "start-selected",
             components: ids,
-            voicePack: voiceBranch,
           } });
           setLaunchResult({ ...res, _mode: mode });
           const bad = (res.items ?? []).filter((x) => !x.ok);
@@ -1871,64 +1673,27 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
               h(Btn, { kind: "qbw-btn2", onClick: () => act("restart"), disabled: !!busy }, "重启"),
               h(Btn, { kind: "qbw-btn2", onClick: () => act("stop"), disabled: !!busy || !bridge.running }, "停止"))),
           h("div", { className: "qbw-card" },
-            h("h4", null, "B站 ", h(StatusDot, { ok: Boolean(bili.available), warn: bili.enabled && !bili.available }, bili.available ? "记忆已生成" : "暂无记忆")),
-            h("div", { className: "qbw-kv" }, h("span", null, "记忆同步"), h("span", null, bili.enabled ? "开" : "关")),
-            h("div", { className: "qbw-kv" }, h("span", null, "记忆简报"), h("span", null, `${bili.briefChars ?? 0} 字`)),
-            h("div", { className: "qbw-kv" }, h("span", null, "生成时间"), h("span", null, fmtTime(bili.generatedAt))),
-            h("div", { className: "qbw-kv" }, h("span", null, "隐私复检"), h("span", null, bili.blocked ? "命中，已拦截" : "通过")),
-            h("div", { className: "qbw-actions" },
-              h(Btn, { kind: "qbw-btn2", onClick: async () => {
-                setBusy("refresh-bili");
-                try { const r = await api("/memory", { method: "POST", body: { action: "refresh-bili" } }); toast(r.ok ? "✓ B站记忆已刷新" : `✗ ${r.error ?? "失败"}`); await reload(); } catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-              }, disabled: !!busy }, "刷新 B站记忆"))),
-          h("div", { className: "qbw-card" },
-            h("h4", null, "合体层 ", h(StatusDot, { ok: scheduler.running }, scheduler.running ? "生物钟在跑" : "生物钟未启动")),
+            h("h4", null, "记忆与身份"),
             h("div", { className: "qbw-kv" }, h("span", null, "身份对齐"), h("span", null, `${align.links ?? 0} 条 / 候选 ${align.candidates ?? 0}`)),
-            h("div", { className: "qbw-kv" }, h("span", null, "QQ→B站记忆"), h("span", null, memory.qqToBili?.enabled ? "开" : "关")),
-            h("div", { className: "qbw-kv" }, h("span", null, "B站→QQ记忆"), h("span", null, memory.biliToQq?.enabled ? "开" : "关")),
-            h("div", { className: "qbw-kv" }, h("span", null, "隐私策略"), h("span", null, `v${overview?.privacyPolicyVersion ?? "?"}`)),
-            h("div", { className: "qbw-actions" },
-              h(Btn, { kind: "qbw-btn2", onClick: () => act("refresh-bili"), disabled: !!busy }, "刷新 B站记忆"))),
+            h("div", { className: "qbw-kv" }, h("span", null, "隐私策略"), h("span", null, `v${overview?.privacyPolicyVersion ?? "?"}`))),
           h("div", { className: "qbw-card" },
             h("h4", null, "启动"),
             h("div", { className: "qbw-hint", style: { marginBottom: "8px" } },
-              "一键启动会按 QQ / B站 页里的「是否启动」开关拉起对应平台；也可以只启动一边。",
-              qqStart ? "" : " QQ 启动开关已关闭。",
-              biliStart ? "" : " B站 启动开关已关闭。"),
+              "一键启动会按 QQ 页里的「是否启动」开关拉起 QQ 桥接；也可以单独启动。",
+              qqStart ? "" : " QQ 启动开关已关闭。"),
             h("div", { className: "qbw-kv" },
               h("span", null, "QQ"),
               h("span", null, qqStart ? (bridge.running ? "启动开关开 · 运行中" : "启动开关开 · 未运行") : "启动开关关")),
-            h("div", { className: "qbw-kv" },
-              h("span", null, "B站"),
-              h("span", null, biliStart ? (scheduler.running ? "启动开关开 · 生物钟在跑" : "启动开关开 · 未运行") : "启动开关关")),
             h("div", { className: "qbw-group", style: { marginTop: "8px" } }, "一键启动 SurfCore"),
             h("div", { className: "qbw-actions", style: { marginTop: "4px" } },
               h("label", { className: "qbw-row", style: { alignItems: "center", gap: "6px", marginRight: "10px" } },
                 h("input", { type: "checkbox", checked: launchSel.qq, onChange: (e) => setLaunchSel((v) => ({ ...v, qq: e.target.checked })) }),
-                h("span", null, `QQ（含 SnowLuma）${launch.qq?.running ? " · 运行中" : " · 未运行"}`)),
-              h("label", { className: "qbw-row", style: { alignItems: "center", gap: "6px", marginRight: "10px" } },
-                h("input", { type: "checkbox", checked: launchSel.bili, onChange: (e) => setLaunchSel((v) => ({ ...v, bili: e.target.checked })) }),
-                h("span", null, `B站${launch.bili?.running ? " · 运行中" : " · 未运行"}`)),
-              h("label", { className: "qbw-row", style: { alignItems: "center", gap: "6px", marginRight: "10px" } },
-                h("input", { type: "checkbox", checked: launchSel.pet, onChange: (e) => setLaunchSel((v) => ({ ...v, pet: e.target.checked })) }),
-                h("span", null, `桌宠${launch.pet?.running ? " · 运行中" : (launch.pet?.installed ? " · 未运行" : " · 未安装")}`)),
-              h("label", { className: "qbw-row", style: { alignItems: "center", gap: "6px" } },
-                h("input", { type: "checkbox", checked: launchSel.voice, onChange: (e) => setLaunchSel((v) => ({ ...v, voice: e.target.checked })) }),
-                h("span", null, `语音${launch.voice?.running ? " · 运行中" : " · 未运行"}`))),
-            launchSel.voice ? h("div", { className: "qbw-actions", style: { marginTop: "2px", paddingTop: 0 } },
-              h("span", { className: "qbw-hint" }, "语音分支："),
-              h("label", { className: "qbw-row", style: { alignItems: "center", gap: "4px" } },
-                h("input", { type: "radio", name: "voiceBranch", checked: voiceBranch === "voice-local", onChange: () => setVoiceBranch("voice-local") }),
-                h("span", null, `本地模型${(launch.voice?.installed ?? []).includes("voice-local") ? "" : "（未安装）"}`)),
-              h("label", { className: "qbw-row", style: { alignItems: "center", gap: "4px" } },
-                h("input", { type: "radio", name: "voiceBranch", checked: voiceBranch === "voice-cloud", onChange: () => setVoiceBranch("voice-cloud") }),
-                h("span", null, `云端模型${(launch.voice?.installed ?? []).includes("voice-cloud") ? "" : "（未安装）"}`))) : null,
+                h("span", null, `QQ（含 SnowLuma）${launch.qq?.running ? " · 运行中" : " · 未运行"}`))),
             h("div", { className: "qbw-actions", style: { marginTop: "6px" } },
               h(Btn, { onClick: () => runLaunch("start"), disabled: !!busy }, busy === "launch-start" ? "启动中…" : "一键启动 SurfCore"),
-              h(Btn, { kind: "qbw-btn2", onClick: () => runLaunch("stop"), disabled: !!busy }, busy === "launch-stop" ? "停止中…" : "一键停止（全部）"),
-              h(Btn, { kind: "qbw-btn3", onClick: () => goTab?.("qq"), disabled: !!busy }, "去 QQ 页改启动开关"),
-              h(Btn, { kind: "qbw-btn3", onClick: () => goTab?.("bili"), disabled: !!busy }, "去 B站 页改启动开关")),
-            [["qq", "QQ"], ["bili", "B站"], ["pet", "桌宠"], ["voice", "语音"]].map(([id, label]) =>
+              h(Btn, { kind: "qbw-btn2", onClick: () => runLaunch("stop"), disabled: !!busy }, busy === "launch-stop" ? "停止中…" : "一键停止"),
+              h(Btn, { kind: "qbw-btn3", onClick: () => goTab?.("qq"), disabled: !!busy }, "去 QQ 页改启动开关")),
+            [["qq", "QQ"]].map(([id, label]) =>
               launch[id]?.lastError ? h("div", { className: "qbw-hint", key: `launch-err-${id}`, style: { color: "#c0392b", marginTop: "2px" } },
                 `${label}：${launch[id].lastError}`) : null),
             launchErr ? h("div", { className: "qbw-err", style: { marginTop: "6px" } },
@@ -1945,7 +1710,7 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
                 checked: unified?.bridge?.startupNotify !== false,
                 onChange: (e) => setUnified(["bridge", "startupNotify"], e.target.checked),
               })),
-            h("div", { className: "qbw-hint" }, "一键启动会按勾选项启动，已在跑的不重复启动；QQ 会按需打开已安装的 SnowLuma（仍需扫码）。一键停止只停 SurfCore 托管的 QQ 桥接、B站生物钟、桌宠和语音包，不会关闭 SnowLuma 本体。人格卡在「角色」页维护。")),
+            h("div", { className: "qbw-hint" }, "一键启动会按勾选项启动，已在跑的不重复启动；QQ 会按需打开已安装的 SnowLuma（仍需扫码）。一键停止只停 SurfCore 托管的 QQ 桥接，不会关闭 SnowLuma 本体。人格卡在「角色」页维护。")),
           h("div", { className: "qbw-card" },
             h("h4", null, "更新 ", (() => {
               const rows = updates.results ?? [];
@@ -2914,53 +2679,6 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           : h("div", { className: "qbw-hint" }, "读取中…"));
     }
 
-    // ── B站 → QQ 自动分享（写根 config.json 的 biliBridge，保存后需重启桥接）──
-    // 放在 B站 页最上面 + 默认展开：以前埋在页面最底部、还是折叠的，
-    // 用户找了半天都找不到（见 PITFALLS #21）。
-    function QqShareSection({ qq, set, data, busy, setBusy, toast }) {
-      const fields = QQ_BILI_SHARE_FIELDS;
-      const share = data?.qqShare;
-      const [shareMsg, setShareMsg] = useState("");
-      const shareNow = async () => {
-        if (!confirm("现在就让角色往白名单群分享一条 B站 视频？这会真的发到群里，并占用今天的一个分享名额。")) return;
-        setBusy("share-now");
-        setShareMsg("");
-        try {
-          // 先确认网关在线：SnowLuma 没起来时桥接仍会「投递成功」，但群里什么都收不到。
-          const s = await api("/bridge");
-          if (s?.status?.running && s.status.snowluma?.connected !== true) {
-            throw new Error("SnowLuma 没连上（先启动 SnowLuma，再点这里）");
-          }
-          const r = await api("/bili/share-now", { method: "POST", body: { action: "share-now" } });
-          if (!r.ok) throw new Error(r.error ?? r.why ?? "桥接返回失败");
-          setShareMsg(`✓ 已投递：${r.card?.title ?? "一条视频"}（${r.sent ?? 0} 个群）`);
-          toast(`✓ 已投递：${r.card?.title ?? "一条视频"}（${r.sent ?? 0} 个群）`);
-        } catch (e) {
-          // 不能只弹 toast：toast 一闪而过，「没反应」的观感就是这么来的。
-          setShareMsg(`✗ ${e.message}`);
-          toast(`✗ ${e.message}`);
-        } finally { setBusy(""); }
-      };
-      return h(Section, {
-        title: "定时分享视频到群（B站 → QQ）",
-        note: "每天按时间点发「标题 + 链接」+ 角色短评；改完点底部「保存并重启 QQ 桥接」",
-        defaultOpen: true,
-      },
-        h("div", { className: "qbw-hint", style: { margin: "6px 0" } },
-          share
-            ? `开关：${share.enabled ? "开" : "关"} · 今天最后一班 ${share.lastSlot || "—"} · 下一班 ${share.nextText || "—"} · ${(share.groupsEffective ?? []).length} 个群 · 形式：${{ text: "文本链接", miniapp: "小程序卡片（已下架）", off: "不发" }[share.cardMode] ?? "文本链接"}`
-            : "状态读取中…"),
-        fields.map((f) => h(Field, {
-          key: f.path.join("."),
-          f,
-          value: getPath(qq, f.path),
-          onChange: (v) => set(f.path, v),
-        })),
-        h("div", { className: "qbw-actions", style: { borderTop: "none", marginTop: "6px", paddingTop: "0" } },
-          h(Btn, { kind: "qbw-btn2", onClick: shareNow, disabled: !!busy }, busy === "share-now" ? "发送中…" : "立即分享一次"),
-          h("span", { className: "qbw-hint" }, "会真的发到白名单群；用来验证排期和卡片是否正常。")),
-        shareMsg ? h("div", { className: shareMsg.startsWith("✓") ? "qbw-ok" : "qbw-err", style: { marginTop: "4px" } }, shareMsg) : null);
-    }
 
     // ── 鱼群保护 · 运行状态卡（B站页顶部）────────────────────────────────
     // 用户最关心「到底有没有真的点赞」：这里直接显示今天赞了几条、上次失败在哪个 code、
@@ -3067,577 +2785,17 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           : h("div", { className: "qbw-hint", style: { marginTop: "6px" } }, "读取中…"));
     }
 
-    // ── 观看历史（B站页之外的单页）────────────────────────────────────────
-    // 数据来源：debrief / watch-video 写入的 watch-history.jsonl；
-    // 旧角色没有历史文件时，自动从 bili-memory.json 补出「看过」的视频。
-    function WatchTab({ busy, setBusy, toast, goTab }) {
-      const [data, setData] = useState(null);
-      const [err, setErr] = useState("");
-      const [q, setQ] = useState("");
-      const [expandedRows, setExpandedRows] = useState(() => new Set());
-      const load = useCallback(async () => {
-        setBusy("watch-load");
-        try { setData(await api("/watch-history?limit=300")); setErr(""); }
-        catch (e) { setErr(e.message); }
-        finally { setBusy(""); }
-      }, [setBusy]);
-      useEffect(() => { load(); }, [load]);
-      const items = useMemo(() => {
-        const all = Array.isArray(data?.items) ? data.items : [];
-        const query = q.trim().toLowerCase();
-        if (!query) return all;
-        return all.filter((x) => `${x.title} ${x.up} ${x.bvid}`.toLowerCase().includes(query));
-      }, [data, q]);
-      const stats = data?.stats ?? {};
-      const fmtDur = (sec) => {
-        const n = Number(sec) || 0;
-        if (!n) return "—";
-        return n >= 3600 ? `${Math.floor(n / 3600)}:${String(Math.floor((n % 3600) / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}` : `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
-      };
-      const modeText = (item) => item.mode === "memory" ? "旧记忆" : item.mode === "full" ? (item.frames ? "深看 · 有截图" : "深看") : item.mode === "frames" ? "抽帧" : "浅看";
-      const timeText = (item) => {
-        if (item.unknownDate) return "日期未知";
-        if (item.dateOnly) return `${new Date(item.at).toLocaleDateString("zh-CN")}（旧记忆）`;
-        return fmtTime(item.at);
-      };
-      const actions = data?.actions ?? {};
-      const actionsReady = Boolean(data && data.actions);
-      const badgeOf = (kind) => kind === "gather" ? "warn" : (kind === "ta" || kind === "share" ? "ok" : "");
-      const toggleRow = (key) => setExpandedRows((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        return next;
-      });
-      const actionCell = (item, rowKey) => {
-        if (!actionsReady) return h("span", { className: "qbw-hint" }, "—");
-        const list = Array.isArray(item.actions) ? item.actions : [];
-        if (!list.length) return h("span", { className: "qbw-hint" }, "仅看了");
-        const expanded = expandedRows.has(rowKey);
-        const shown = expanded ? list : list.slice(0, 3);
-        const rest = list.length - shown.length;
-        return h("div", { className: "qbw-list", style: { gap: "3px" } },
-          shown.map((action, index) => h("div", {
-            key: `${action.kind}|${action.at}|${index}`,
-            style: { display: "flex", gap: "6px", alignItems: "baseline", flexWrap: "wrap" },
-          },
-            h("span", { className: "qbw-badge " + badgeOf(action.kind) }, action.label),
-            action.text ? h("span", { className: "qbw-hint", style: { maxWidth: "240px" } }, action.text) : null,
-            h("span", { className: "qbw-hint", style: { opacity: 0.7 } }, fmtTime(action.at).slice(5, 16)),
-            action.beforeFirstWatch ? h("span", { className: "qbw-hint", style: { opacity: 0.55 } }, "早于本地观看") : null)),
-          rest > 0 ? h(Btn, { kind: "qbw-btn2", onClick: () => toggleRow(rowKey), style: { padding: "0 6px", fontSize: "10.5px" } }, `展开 +${rest}`) : null,
-          expanded && list.length > 3 ? h(Btn, { kind: "qbw-btn2", onClick: () => toggleRow(rowKey), style: { padding: "0 6px", fontSize: "10.5px" } }, "收起") : null);
-      };
-      return h("div", null,
-        h("div", { className: "qbw-infobox" },
-          "这里是她**真正看过**的视频历史（按当前角色隔离）：每次 ", h("code", { className: "qbw-code" }, "debrief"),
-          " / ", h("code", { className: "qbw-code" }, "watch-video"), " 都会自动记一笔；",
-          "「操作」列来自评论记账 + 收藏 + 动态（旧评论只存前 40 字预览；聚拢回复会标「鱼群保护」）。",
-          "旧角色没有历史文件时，会从 B站 记忆里补出「看过」的视频。文件：", h("code", { className: "qbw-code" }, "watch-history.jsonl")),
-        h("div", { className: "qbw-grid", style: { marginTop: "10px" } },
-          h("div", { className: "qbw-card" }, h("h4", null, "今天"), h("div", { className: "qbw-meter-head" }, h("b", null, stats.today ?? 0), h("span", { className: "qbw-hint" }, "条"))),
-          h("div", { className: "qbw-card" }, h("h4", null, "最近 7 天"), h("div", { className: "qbw-meter-head" }, h("b", null, stats.last7d ?? 0), h("span", { className: "qbw-hint" }, "条"))),
-          h("div", { className: "qbw-card" }, h("h4", null, "深看 / 抽帧"), h("div", { className: "qbw-meter-head" }, h("b", null, stats.deep ?? 0), h("span", { className: "qbw-hint" }, "条"))),
-          h("div", { className: "qbw-card" }, h("h4", null, "不同视频"), h("div", { className: "qbw-meter-head" }, h("b", null, stats.uniqueVideos ?? 0), h("span", { className: "qbw-hint" }, stats.backfilled ? `其中 ${stats.backfilled} 条来自旧记忆` : "条")))),
-        h("div", { className: "qbw-search", style: { marginTop: "12px" } },
-          h("input", { className: "qbw-input", placeholder: "搜标题 / UP / BV", value: q, onChange: (e) => setQ(e.target.value) }),
-          h(Btn, { kind: "qbw-btn2", onClick: load, disabled: !!busy }, busy === "watch-load" ? "刷新中…" : "刷新"),
-          h(Btn, { kind: "qbw-btn2", onClick: () => goTab?.("bili"), disabled: !!busy }, "去 B站 页")),
-        data && actionsReady ? h("div", { className: "qbw-hint", style: { marginTop: "8px" } },
-          `操作（已关联观看）：评论 ${actions.comments ?? 0} 条（主评论 ${actions.main ?? 0} · 聚拢 ${actions.gather ?? 0} · 回复 ${actions.reply ?? 0} · 搭话 ${actions.ta ?? 0} · 分享 ${actions.share ?? 0}）`,
-          ` · 收藏 ${actions.favorite ?? 0} · 发动态 ${actions.dynamic ?? 0} · 仅看 ${actions.watchedOnly ?? 0} 条`) : null,
-        data && !actionsReady ? h("div", { className: "qbw-warnbox" },
-          "操作列需要新版宿主：当前 DSH 还是旧代码（接口没返回 actions）。重启 DSH 或重载 surfcore 后再刷新本页。") : null,
-        err ? h("div", { className: "qbw-err", style: { margin: "8px 0" } }, `✗ ${err}`) : null,
-        !data && !err ? h("div", { className: "qbw-hint", style: { padding: "20px 0" } }, "读取观看历史…") : null,
-        data && items.length === 0 ? h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-          h("div", { className: "qbw-hint" }, q ? "没有匹配的记录。" : "还没有观看记录。下一次 debrief / watch-video 会自动记一笔；旧数据会在读取时从 B站 记忆补出来。")) : null,
-        items.length ? h("div", { className: "qbw-scroll", style: { maxHeight: "420px", marginTop: "10px" } },
-          h("table", { className: "qbw-table" },
-            h("thead", null, h("tr", null,
-              h("th", null, "时间"), h("th", null, "视频"), h("th", null, "UP"), h("th", null, "时长"), h("th", null, "读法"), h("th", null, "评分"), h("th", null, "操作"))),
-            h("tbody", null, items.map((item, i) => {
-              const rowKey = `${item.bvid}|${item.at}|${i}`;
-              return h("tr", { key: rowKey },
-                h("td", { style: { whiteSpace: "nowrap", color: "var(--dsw-alias-label-tertiary)" } }, timeText(item)),
-                h("td", null,
-                  item.bvid
-                    ? h("a", { href: `https://www.bilibili.com/video/${item.bvid}`, target: "_blank", rel: "noreferrer" }, item.title || item.bvid)
-                    : (item.title || "（无标题）"),
-                  item.bvid && item.title ? h("div", { className: "qbw-hint" }, item.bvid) : null),
-                h("td", null, item.up || "—"),
-                h("td", { style: { whiteSpace: "nowrap" } }, fmtDur(item.duration)),
-                h("td", { style: { whiteSpace: "nowrap" } }, h("span", { className: "qbw-badge " + (item.mode === "full" || item.mode === "frames" ? "ok" : "") }, modeText(item))),
-                h("td", { style: { whiteSpace: "nowrap" } }, item.score == null ? "—" : `${item.score}/20`),
-                h("td", { style: { minWidth: "220px" } }, actionCell(item, rowKey)));
-            })))) : null,
-        data ? h("div", { className: "qbw-hint", style: { marginTop: "8px" } },
-          `共 ${data.total ?? items.length} 条${q ? `（过滤后 ${items.length} 条）` : ""} · 数据文件 ${data.file || "—"}`) : null);
-    }
 
     // ── B站 扫码登录（鱼 / 主人）────────────────────────────────────────────
     // 用宿主启动 Edge headless 打开官方登录页，把页面里的二维码取出来显示给用户；
     // 扫码成功后宿主只保存 cookie（鱼写 credentials.json，主人写 owner-credentials.json），
     // 客户端永远拿不到 cookie，只拿到 mid/昵称。
-    function BiliQrModal({ target = "owner", onClose, onConfirmed }) {
-      const [state, setState] = useState({ phase: "starting" });
-      const [allowSameAsOwner, setAllowSameAsOwner] = useState(false);
-      const [notice, setNotice] = useState("");
-      const idRef = useRef("");
-      const confirmedRef = useRef(onConfirmed);
-      useEffect(() => { confirmedRef.current = onConfirmed; }, [onConfirmed]);
-
-      const start = useCallback(async () => {
-        idRef.current = "";
-        setState({ phase: "starting" });
-        try {
-          const result = await api("/bili/qr/start", { method: "POST", body: { target, allowSameAsOwner } });
-          if (!result?.id || !result?.image) throw new Error(result?.error || "没有拿到二维码");
-          idRef.current = result.id;
-          setState({ phase: "waiting", id: result.id, image: result.image, expected: result.expected ?? {} });
-        } catch (e) {
-          const message = String(e?.message ?? e);
-          setState({
-            phase: "error",
-            error: (message.includes("未知接口") || message.includes("只支持 GET/POST"))
-              ? `${message}（宿主插件还是旧代码：重启 DSH 或重载 surfcore 后这个接口才注册）`
-              : message,
-          });
-        }
-      }, [target, allowSameAsOwner]);
-
-      useEffect(() => { start(); }, [start]);
-
-      useEffect(() => {
-        const id = state.id;
-        if (!id || (state.phase !== "waiting" && state.phase !== "scanned")) return undefined;
-        let stopped = false;
-        const timer = setInterval(async () => {
-          try {
-            const result = await api(`/bili/qr/poll?id=${encodeURIComponent(id)}`);
-            if (stopped) return;
-            if (result.status === "confirmed") {
-              stopped = true; clearInterval(timer); idRef.current = "";
-              setState({ phase: "confirmed", account: result.account || {} });
-              confirmedRef.current?.(result.account, target);
-            } else if (result.status === "scanned") {
-              setState((s) => ({ ...s, phase: "scanned" }));
-            } else if (result.status === "expired") {
-              stopped = true; clearInterval(timer); idRef.current = "";
-              setState({ phase: "expired" });
-            } else if (result.status === "wrong-account") {
-              stopped = true; clearInterval(timer); idRef.current = "";
-              setState({ phase: "wrong", error: result.error, account: result.account, expected: result.expected });
-            } else if (result.status === "failed") {
-              stopped = true; clearInterval(timer); idRef.current = "";
-              setState({ phase: "error", error: result.error });
-            }
-          } catch { /* 网络抖动继续轮询；二维码过期会被宿主判 expired */ }
-        }, 1500);
-        return () => { stopped = true; clearInterval(timer); };
-      }, [state.id, state.phase, target]);
-
-      useEffect(() => () => {
-        const id = idRef.current;
-        idRef.current = "";
-        if (id) api("/bili/qr/cancel", { method: "POST", body: { id } }).catch(() => {});
-      }, []);
-
-      const close = async () => {
-        const id = idRef.current;
-        idRef.current = "";
-        if (id) await api("/bili/qr/cancel", { method: "POST", body: { id } }).catch(() => {});
-        onClose?.();
-      };
-
-      const title = target === "fish" ? "扫码绑定小肥鱼的 B站 账号" : "扫码登录主人的 B站 账号";
-      const live = state.phase === "waiting" || state.phase === "scanned";
-      return h("div", { className: "qbw-modal-backdrop", onClick: (e) => { if (e.target === e.currentTarget) close(); } },
-        h("div", { className: "qbw-modal", style: { maxWidth: "430px" } },
-          h("h3", null, title),
-          state.phase === "starting" ? h("p", { className: "qbw-hint" }, "正在打开 B站 登录页并取二维码…（约 5~10 秒）") : null,
-          live ? h("div", null,
-            h("img", {
-              src: state.image, alt: "B站登录二维码",
-              style: { width: "220px", height: "220px", imageRendering: "pixelated", display: "block", margin: "12px auto", background: "#fff", padding: "10px", borderRadius: "10px" },
-            }),
-            h("p", { className: "qbw-hint", style: { textAlign: "center" } },
-              state.phase === "scanned" ? "已扫码，请在手机上确认登录" : "打开 B站 App → 扫一扫 → 确认登录"),
-            h("p", { className: "qbw-hint", style: { textAlign: "center" } },
-              target === "owner"
-                ? "只保存 cookie 用来读取偏好；不会用主人号发评论/动态。"
-                : "绑定后她会用这个号看视频、评论、发动态。"),
-            state.expected?.mid ? h("p", { className: "qbw-hint", style: { textAlign: "center" } }, `期望账号：${state.expected.name || (target === "fish" ? "小肥鱼" : "主人")}（${state.expected.mid}）；扫错号会被拒绝。`) : null,
-            target === "fish" ? h("label", { className: "qbw-hint", style: { display: "flex", gap: "6px", alignItems: "center", justifyContent: "center", marginTop: "8px" } },
-              h("input", { type: "checkbox", checked: allowSameAsOwner, onChange: (e) => setAllowSameAsOwner(e.target.checked) }),
-              "我只有一个 B站 号（主人=小肥鱼），允许用主人号当小肥鱼") : null) : null,
-          state.phase === "confirmed" ? h("div", null,
-            h("p", { style: { textAlign: "center", fontSize: "15px", color: "#67c23a", fontWeight: 600 } }, "✅ 登录成功"),
-            h("p", { style: { textAlign: "center" } },
-              `${state.account?.name || "（未取到昵称）"}（${state.account?.mid || "?"}）`),
-            h("p", { className: "qbw-hint", style: { textAlign: "center" } },
-              "已写入凭据。可以在「B站 登录账号」卡片点「核查登录」再确认一次；如果 B站 上改了名，核查会显示最新昵称。"),
-            state.account?.savedAt ? h("p", { className: "qbw-hint", style: { textAlign: "center" } }, `保存时间：${new Date(state.account.savedAt).toLocaleString("zh-CN", { hour12: false })}`) : null) : null,
-          state.phase === "expired" ? h("div", null,
-            h("p", { className: "qbw-err" }, "二维码已过期。"),
-            h("p", { className: "qbw-hint" }, "建议：点下面「重新生成」；如果一直过期，确认手机 B站 App 能正常扫码。")) : null,
-          state.phase === "wrong" ? h("div", null,
-            h("p", { className: "qbw-err" }, `✗ ${state.error || "扫错账号"}`),
-            h("p", { className: "qbw-hint" }, "扫错号不会保存。要点：① 想用主人同一个号 → 勾下方「我只有一个 B站 号」再扫；② 想换到别的号 → 点下面「换号（清除旧凭据）」再扫。"),
-            h("p", { className: "qbw-hint" }, state.hint || "")) : null,
-          state.phase === "error" ? h("div", null,
-            h("p", { className: "qbw-err" }, `✗ ${state.error || "扫码失败"}`),
-            h("p", { className: "qbw-hint" }, state.hint || "建议：点「重新生成」再试；仍失败请重启 DSH（旧代码可能没有扫码接口）。")) : null,
-          notice ? h("p", { className: "qbw-hint", style: { textAlign: "center" } }, notice) : null,
-          h("div", { className: "qbw-actions", style: { justifyContent: "center" } },
-            state.phase === "confirmed" ? h(Btn, { onClick: close }, "完成") : null,
-            live || state.phase === "confirmed" ? null : h(Btn, { onClick: start }, "重新生成"),
-            h(Btn, {
-              kind: "qbw-btn2",
-              onClick: async () => {
-                try {
-                  const r = await api("/bili/account/reset", { method: "POST", body: { target } });
-                  setNotice(`✓ 已清除旧凭据并归档 ${r.archived?.length ?? 0} 个文件；点「重新生成」扫新号即可。`);
-                } catch (e) { setNotice(`✗ ${e.message}`); }
-              },
-            }, "换号（清除旧凭据）"),
-            h(Btn, { kind: "qbw-btn2", onClick: close }, "取消"))));
-    }
 
     // ── 口味权重 / 一键抓取 ─────────────────────────────────────────────────
     // 用户反馈（2026-10-23）：小肥鱼总盯着一两个偏好，而且新用户不知道「爱看」填什么。
     // 这个组件做两件事：① 每个偏好一个 0~5 的权重；② 从用户自己的 B站 数据里抓候选词，
     // 勾选后填进「爱看」（不自动保存，仍走底部「保存」）。
-    function TasteEditor({ cfg, set, toast }) {
-      const [newWord, setNewWord] = useState("");
-      const [scan, setScan] = useState(null);
-      const [scanErr, setScanErr] = useState("");
-      const [scanning, setScanning] = useState(false);
-      const [picked, setPicked] = useState([]);
-      const [target, setTarget] = useState("owner");
-      const [qrTarget, setQrTarget] = useState("");
-      const [accounts, setAccounts] = useState(null);
-      useEffect(() => {
-        api("/bili/accounts").then(setAccounts).catch(() => { /* 旧宿主没有这个接口 */ });
-      }, []);
-      const prefs = cfg?.preferences ?? {};
-      const like = Array.isArray(prefs.like) ? prefs.like : [];
-      const extras = Array.isArray(prefs.keywords) ? prefs.keywords : [];
-      const weights = prefs.weights && typeof prefs.weights === "object" && !Array.isArray(prefs.weights) ? prefs.weights : {};
-      const weightOf = (label) => {
-        const value = Number(weights[label]);
-        return Number.isFinite(value) ? value : 1;
-      };
-      const setWeight = (label, value) => {
-        const next = Math.max(0, Math.min(5, Number(value) || 0));
-        set(["preferences", "weights"], { ...weights, [label]: Math.round(next * 100) / 100 });
-      };
-      const removeWord = (label, kind) => {
-        const list = kind === "extra" ? extras : like;
-        set(["preferences", kind === "extra" ? "keywords" : "like"], list.filter((word) => word !== label));
-        const next = { ...weights };
-        delete next[label];
-        set(["preferences", "weights"], next);
-      };
-      const addWord = () => {
-        const word = newWord.replace(/\s+/g, " ").trim();
-        if (!word) return;
-        const exists = [...like, ...extras].some((item) => String(item).toLowerCase() === word.toLowerCase());
-        if (!exists) set(["preferences", "like"], [...like, word]);
-        setNewWord("");
-      };
-      const runScan = async () => {
-        setScanning(true); setScanErr("");
-        try {
-          const result = await api(`/preferences/scan?sources=history,favorites,local&limit=24&target=${target}`);
-          if (result?.ok === false) throw new Error(result.error || "扫描失败");
-          // 旧宿主不认 target 会直接按鱼扫；不能把鱼的结果冒充主人，宁可让用户重载插件。
-          if (target !== "fish" && result.target !== target) {
-            setScan(null);
-            setScanErr("宿主插件还是旧代码（不认「抓取主人/两者」）：重启 DSH 或重载 surfcore 后再抓。");
-            return;
-          }
-          if (result.ownerLoginRequired) { setScan(null); setQrTarget("owner"); return; }
-          const fishMissing = (result.sources ?? []).some((item) => item.name === "fish-credential");
-          if (fishMissing) { setScan(null); setQrTarget("fish"); return; }
-          setScan(result); setPicked([]);
-        } catch (e) {
-          const message = String(e?.message ?? e);
-          setScanErr(message.includes("未知接口") ? `${message}（宿主插件还是旧代码：重启 DSH 或重载 surfcore 后这个接口才注册）` : message);
-        }
-        finally { setScanning(false); }
-      };
-      const onQrConfirmed = (account, role) => {
-        setQrTarget("");
-        setAccounts((prev) => ({
-          ...(prev ?? {}),
-          [role]: { configured: true, mid: account.mid, name: account.name, savedAt: account.savedAt },
-        }));
-        toast(`✓ 已登录 ${account.name || account.mid}（${account.mid}）`);
-        setTimeout(() => { runScan(); }, 250);
-      };
-      const exists = (keyword) => [...like, ...extras].some((item) => String(item).toLowerCase() === String(keyword).toLowerCase());
-      const candidates = Array.isArray(scan?.candidates) ? scan.candidates : [];
-      // 大小写重复的关键词（DeepSeek / Deepseek / deepseek）在选题器里会合并成一条，
-      // 但设置页仍会显示三行；提前说清楚，免得用户以为「权重没生效」。
-      const duplicateGroups = (() => {
-        const map = new Map();
-        for (const label of [...like, ...extras]) {
-          const key = String(label).toLowerCase();
-          if (!map.has(key)) map.set(key, []);
-          map.get(key).push(label);
-        }
-        return [...map.values()].filter((group) => group.length > 1);
-      })();
-      const toggle = (keyword) => setPicked((list) => list.includes(keyword) ? list.filter((item) => item !== keyword) : [...list, keyword]);
-      const addPicked = () => {
-        const add = picked.filter((keyword) => !exists(keyword));
-        if (!add.length) { toast("没有可加入的新关键词"); return; }
-        set(["preferences", "like"], [...like, ...add]);
-        setPicked([]);
-        toast(`✓ 已加入 ${add.length} 个关键词（点底部「保存」才生效）`);
-      };
-      const pickTop = (count) => setPicked(candidates
-        .filter((item) => !exists(item.keyword))
-        .slice(0, count)
-        .map((item) => item.keyword));
-      const weightRow = (label, kind) => h("div", { className: "qbw-item", key: `${kind}:${label}` },
-        h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
-          h("span", { className: "qbw-label" }, label),
-          kind === "extra" ? h("span", { className: "qbw-badge" }, "额外关键词") : null,
-          h("span", { className: "qbw-hint" }, "权重"),
-          h("input", {
-            type: "range", min: 0, max: 5, step: 0.5,
-            style: { width: "130px" },
-            value: weightOf(label),
-            onChange: (e) => setWeight(label, e.target.value),
-          }),
-          h("span", { className: "qbw-hint", style: { minWidth: "34px", display: "inline-block" } }, weightOf(label).toFixed(1)),
-          weightOf(label) === 0 ? h("span", { className: "qbw-badge warn" }, "停用") : null),
-        h("div", { style: { display: "flex", gap: "6px" } },
-          h(Btn, { kind: "qbw-btn2", onClick: () => removeWord(label, kind), title: "删掉这个关键词" }, "×")));
-      return h("div", null,
-        h("div", { className: "qbw-hint", style: { marginBottom: "6px" } },
-          "权重 0 = 停用（不搜、不计分）；1 = 默认；越高，每轮选题分到的条数越多。",
-          "所有偏好至少会分到 1 条（条数不够时按权重抽样轮换）。改完点底部「保存」，下一轮醒来生效。"),
-        h("div", { className: "qbw-list" }, like.length ? like.map((label) => weightRow(label, "like")) : h("div", { className: "qbw-hint" }, "还没有「爱看」关键词：手动加一个，或点下面「一键抓取」。")),
-        extras.length ? h("div", { style: { marginTop: "10px" } },
-          h("div", { className: "qbw-hint" }, "额外关键词（只用来扩大搜索，默认权重 0.75，可调）："),
-          h("div", { className: "qbw-list", style: { marginTop: "4px" } }, extras.map((label) => weightRow(label, "extra")))) : null,
-        duplicateGroups.length ? h("div", { className: "qbw-warnbox" },
-          "检测到 ", duplicateGroups.length, " 组大小写重复（",
-          duplicateGroups.map((group) => group.join(" / ")).join("；"),
-          "）：选题器会按同一条合并计分，想省事可以删掉多余的。") : null,
-        h("div", { className: "qbw-actions", style: { marginTop: "10px" } },
-          h("input", { className: "qbw-input", placeholder: "新关键词（如：猫咪 / 异环 / 手书）", value: newWord, onChange: (e) => setNewWord(e.target.value), onKeyDown: (e) => { if (e.key === "Enter") addWord(); } }),
-          h(Btn, { kind: "qbw-btn2", onClick: addWord, disabled: !newWord.trim() }, "+ 加到爱看"),
-          h("select", { className: "qbw-select", value: target, onChange: (e) => setTarget(e.target.value), title: "抓谁的口味" },
-            h("option", { value: "owner" }, "抓取主人"),
-            h("option", { value: "fish" }, "抓取小肥鱼"),
-            h("option", { value: "both" }, "两者都抓")),
-          h(Btn, { onClick: runScan, disabled: scanning }, scanning ? "抓取中…" : "一键抓取我的偏好")),
-        accounts ? h("div", { className: "qbw-hint", style: { marginTop: "4px" } },
-          "主人账号：", accounts.owner?.configured ? `${accounts.owner.name || "（未取到昵称）"}（${accounts.owner.mid}）已扫码登录` : "未登录（点抓取会弹二维码）",
-          " · 小肥鱼：", accounts.fish?.configured ? `${accounts.fish.name || "（未取到昵称）"}（${accounts.fish.mid}）已绑定` : "未绑定（B站 页可扫码）") : null,
-        h("div", { className: "qbw-hint", style: { marginTop: "4px" } },
-          "抓取是只读的：读当前选中账号的观看历史 / 收藏夹 + 本地观看记录；不读浏览器登录的账号、不读 QQ 聊天、不点赞、不改账号。",
-          "抓主人需要先用主人的 B站 App 扫二维码；扫错号会被拒绝。"),
-        scanErr ? h("div", { className: "qbw-err", style: { marginTop: "6px" } }, `✗ ${scanErr}`) : null,
-        scan ? h("div", { style: { marginTop: "8px" } },
-          (scan.accounts ?? []).length ? h("div", { className: "qbw-hint" },
-            `抓取账号：${(scan.accounts ?? []).map((item) => `${item.role === "owner" ? "主人" : "小肥鱼"} ${item.name || item.mid}（${item.mid}）`).join(" · ")}`) : null,
-          h("div", { className: "qbw-hint" }, `来源：${(scan.sources ?? []).map((item) => `${item.ok ? "✓" : "✗"} ${item.name}${item.items != null ? `（${item.items}）` : ""}${item.error ? ` ${item.error}` : ""}`).join(" · ")}`),
-          candidates.length ? h("div", { className: "qbw-chips" }, candidates.map((item) => {
-            const already = exists(item.keyword);
-            return h("button", {
-              key: item.key, type: "button",
-              className: "qbw-chip" + (picked.includes(item.keyword) ? " on" : ""),
-              title: `命中 ${item.count} 次 · ${(item.sources ?? []).join("/")}${item.samples?.length ? `\n例：${item.samples.join("\n例：")}` : ""}`,
-              disabled: already,
-              onClick: () => toggle(item.keyword),
-            }, `${item.keyword}`, h("span", { className: "qbw-badge" }, already ? "已有" : String(item.count)));
-          })) : h("div", { className: "qbw-hint" }, "没抓到候选：可能是观看记录太少，或候选都已包含在现有偏好里。"),
-          candidates.length ? h("div", { className: "qbw-actions", style: { marginTop: "8px" } },
-            h(Btn, { onClick: addPicked, disabled: !picked.length }, `加入爱看（${picked.length}）`),
-            h(Btn, { kind: "qbw-btn2", onClick: () => pickTop(6), disabled: !candidates.length }, "选前 6 个"),
-            h(Btn, { kind: "qbw-btn2", onClick: () => setPicked([]), disabled: !picked.length }, "清空选择"),
-            h("span", { className: "qbw-hint" }, "加入后仍要点底部「保存」")) : null) : null,
-        qrTarget ? h(BiliQrModal, {
-          target: qrTarget,
-          onClose: () => setQrTarget(""),
-          onConfirmed: onQrConfirmed,
-        }) : null);
-    }
 
-    function BiliTab({ cfg, set, qq, setQqPath, admin, setAdmin, unified, setUnified, qqPrivate, qqAllowAll, overview, busy, setBusy, toast, reload, onSave }) {
-      const [query, setQuery] = useState("");
-      const [cookie, setCookie] = useState({ sessdata: "", bili_jct: "", buvid3: "" });
-      const [cookieMsg, setCookieMsg] = useState("");
-      const [qrFish, setQrFish] = useState(false);
-      const [accounts, setAccounts] = useState(null);
-      const [accountCheck, setAccountCheck] = useState({});
-      const loadAccounts = useCallback(async () => {
-        try { setAccounts(await api("/bili/accounts")); } catch { setAccounts(null); }
-      }, []);
-      useEffect(() => { loadAccounts(); }, [loadAccounts]);
-      const verifyAccount = async (target) => {
-        setAccountCheck((s) => ({ ...s, [target]: { busy: true } }));
-        try {
-          const r = await api("/bili/account/verify", { method: "POST", body: { target } });
-          setAccountCheck((s) => ({ ...s, [target]: r }));
-          if (r.ok) toast(`✓ ${target === "owner" ? "主人" : "小肥鱼"} 登录有效：${r.account?.name}（${r.account?.mid}）`);
-          else toast(`✗ 核查失败：${r.error || "原因不明"}`);
-          await loadAccounts();
-        } catch (e) {
-          setAccountCheck((s) => ({ ...s, [target]: { ok: false, error: e.message } }));
-        }
-      };
-      const [deps, setDeps] = useState("");
-      const [pending, setPending] = useState([]);
-      const [pendingMsg, setPendingMsg] = useState("");
-      const [automation, setAutomation] = useState(null);
-      const bili = overview?.bili ?? {};
-
-      const loadAutomation = useCallback(async () => {
-        try { setAutomation(await api("/bili/automation")); }
-        catch (e) { setAutomation({ ok: false, error: String(e?.message ?? e) }); }
-      }, []);
-      useEffect(() => { loadAutomation(); }, [loadAutomation]);
-
-      const loadPending = useCallback(async () => {
-        try { const r = await api("/bili/pending"); setPending(r.items ?? []); } catch {}
-      }, []);
-      useEffect(() => { loadPending(); }, [loadPending]);
-
-      const accountCard = h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-        h("h4", null, "B站 登录账号"),
-        h("div", { className: "qbw-hint", style: { marginTop: "2px" } },
-          "显示扫码登录的账号；「核查」会读凭据文件再问一次 B站，确认登录还有效、mid 没串。"),
-        [["fish", "小肥鱼"], ["owner", "主人"]].map(([target, label]) => {
-          const acc = target === "owner" ? accounts?.owner : accounts?.fish;
-          const chk = accountCheck[target] || {};
-          return h("div", { key: target, style: { marginTop: "8px", padding: "8px 10px", border: "1px solid rgba(127,127,127,.2)", borderRadius: "8px" } },
-            h("div", { style: { fontWeight: 600 } },
-              `${label}：`,
-              acc?.configured ? `${acc.name || "（未取到昵称）"}（${acc.mid}）` : "未登录",
-              chk.busy ? h("span", { className: "qbw-hint" }, " 核查中…") : null),
-            acc?.savedAt ? h("div", { className: "qbw-hint" }, `保存时间：${new Date(acc.savedAt).toLocaleString("zh-CN", { hour12: false })}`) : null,
-            h("div", { style: { display: "flex", gap: "8px", marginTop: "6px", flexWrap: "wrap" } },
-              h(Btn, { kind: "qbw-btn2", onClick: () => verifyAccount(target), disabled: !!chk.busy || !acc?.configured }, "核查登录"),
-              target === "fish" ? h(Btn, { kind: "qbw-btn2", onClick: () => setQrFish(true) }, acc?.configured ? "重新扫码" : "扫码登录") : null),
-            chk.ok === true ? h("div", { className: "qbw-hint", style: { color: "#67c23a", marginTop: "4px" } },
-              `✓ 登录有效：${chk.account?.name || "（未取到昵称）"}（${chk.account?.mid}）`) : null,
-            chk.ok === false ? h("div", { className: "qbw-err", style: { marginTop: "4px" } },
-              `✗ ${chk.error || "核查失败"}${chk.hint ? `（建议：${chk.hint}）` : ""}`) : null);
-        }));
-
-      const groups = query.trim()
-        ? BILI_FIELDS.map((g) => ({ ...g, fields: g.fields.filter((f) => `${g.group} ${f.label} ${f.hint ?? ""} ${f.path.join(".")}`.toLowerCase().includes(query.trim().toLowerCase())) })).filter((g) => g.fields.length)
-        : BILI_FIELDS;
-      const runDeps = async () => {
-        setBusy("deps"); setDeps("检查中…");
-        try {
-          const r = await api("/bili/deps");
-          const lines = (r.items ?? []).map((i) => `${i.ok ? "✓" : "✗"} ${i.name} — ${i.detail ?? ""}`);
-          if (r.self) lines.push("", `她自己：${r.self.name}（mid ${r.self.mid}）✓`);
-          setDeps([...lines, "", r.ok ? "全部可用 ✓" : "有项不可用 ✗"].join("\n"));
-          await reload();
-        } catch (e) { setDeps(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const saveCookie = async () => {
-        setBusy("cookie"); setCookieMsg("");
-        try {
-          const r = await api("/bili/cookie", { method: "POST", body: { action: "cookie", ...cookie } });
-          setCookieMsg(`✓ ${r.detail ?? "已写入"}`);
-          setCookie({ sessdata: "", bili_jct: "", buvid3: "" });
-          await reload();
-        } catch (e) { setCookieMsg(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const testNotify = async () => {
-        setBusy("notify");
-        try { const r = await api("/bili/notify-config"); const t = await api("/bili/notify", { method: "POST", body: { action: "notify-test" } }); setDeps(`${r.notify?.type ?? "?"} 测试：\n${t.out || ""}${t.err ? "\n" + t.err : ""}`); }
-        catch (e) { setDeps(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const pendingAct = async (action, id) => {
-        setBusy(action + id); setPendingMsg("");
-        try {
-          const r = await api("/bili/pending", { method: "POST", body: { action, id } });
-          setPendingMsg(r.ok ? "✓ 完成" : `✗ ${r.error ?? r.err ?? "失败"}`);
-          await loadPending();
-        } catch (e) { setPendingMsg(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-
-      return h("div", null,
-        h(PlatformStartCard, {
-          platform: "bili",
-          hint: "开 = DSH 启动时自动运行 B站 生物钟，并纳入「一键启动」；关 = 生物钟不自动跑、也不参与一键启动（保存后会停掉当前生物钟）。B站→QQ 的定时分享/记忆是桥接里的独立任务，由下面的「定时分享视频到群」和 QQ 侧「启用 B站 桥接」控制。",
-          enabled: unified?.platforms?.start?.bili !== false,
-          onChange: (value) => setUnified(["platforms", "start", "bili"], value),
-          running: Boolean(overview?.scheduler?.running),
-          overview,
-        }),
-        h(AdminCard, { admin, onChange: setAdmin, qqPrivate, qqAllowAll, toast }),
-        h("div", { className: "qbw-card", style: { marginBottom: "10px" } },
-          h("h4", null, "B站 账号"),
-          h("div", { className: "qbw-kv" }, h("span", null, "登录态"), h("span", null, bili.available ? `记忆已生成 · ${bili.briefChars ?? 0} 字` : "暂无记忆（先扫码登录）")),
-          h("div", { className: "qbw-kv" }, h("span", null, "隐私复检"), h("span", null, bili.blocked ? "命中拦截" : "通过")),
-          h("p", null, "推荐扫码登录小肥鱼（用 B站 App 扫一扫）；手动粘贴 cookie 和待审核队列在「高级设置」里。"),
-          h("div", { className: "qbw-actions", style: { borderTop: "none", marginTop: "6px", paddingTop: "0" } },
-            h(Btn, { onClick: () => setQrFish(true), disabled: !!busy }, "扫码登录小肥鱼"))),
-        h(QqShareSection, { qq, set: setQqPath, data: automation, busy, setBusy, toast }),
-        h(Section, { title: "作息窗口", note: "C 模式：每个窗口至少 1 次；全天上限见「每天最多醒来」，剩余次数按该时段最近评分分配，相邻两次至少隔「最小间隔」", defaultOpen: true },
-          h("div", { style: { padding: "6px 0" } }, h(WindowsEditor, { value: cfg?.night?.windows, onChange: (v) => set(["night", "windows"], v) }))),
-        h(AdvancedSettings, { note: "凭据 / 鱼群状态 / 口味权重 / 待审核 / 全部 B站 参数：展开后同样可改" },
-          h(FieldGroups, { groups, cfg, set, onSave, categories: BILI_ADV_CATEGORIES }),
-          h(FishGuardStatusCard, { busy, toast }),
-          h(AutomationCard, { data: automation, onRefresh: loadAutomation, busy }),
-          h("div", { className: "qbw-search" },
-            h("input", { className: "qbw-input", placeholder: "搜索 B站 参数", value: query, onChange: (e) => setQuery(e.target.value) }),
-            h(Btn, { kind: "qbw-btn2", onClick: runDeps, disabled: !!busy }, busy === "deps" ? "体检中…" : "依赖体检"),
-            h(Btn, { kind: "qbw-btn2", onClick: testNotify, disabled: !!busy }, "发条通知测试")),
-          h("div", { className: "qbw-infobox" },
-            "B站参数写入 ", h("code", { className: "qbw-code" }, "~/.dsh/surfcore/bili.config.json"), "；",
-            "cookie 单独写入 ", h("code", { className: "qbw-code" }, "~/.dsh/surfcore/bili/credentials.json"), "，永不回显。",
-            "人设卡已合体到「角色」页，这里不再重复一套。"),
-          h("div", { className: "qbw-grid" },
-            h("div", { className: "qbw-card" }, h("h4", null, "B站状态"),
-              h("div", { className: "qbw-kv" }, h("span", null, "记忆"), h("span", null, bili.available ? `${bili.briefChars} 字` : "暂无")),
-              h("div", { className: "qbw-kv" }, h("span", null, "生成时间"), h("span", null, fmtTime(bili.generatedAt))),
-              h("div", { className: "qbw-actions" }, h(Btn, { kind: "qbw-btn2", onClick: runDeps, disabled: !!busy }, "依赖体检"))),
-            h("div", { className: "qbw-card" }, h("h4", null, "手动粘贴凭据（备用）"),
-              h("p", null, "只在 Edge 不可用 / 扫码失败时用；平时优先上面的扫码登录。"),
-              h("div", { className: "qbw-list" },
-                h("input", { className: "qbw-input", placeholder: "SESSDATA", value: cookie.sessdata, onChange: (e) => setCookie((s) => ({ ...s, sessdata: e.target.value })) }),
-                h("input", { className: "qbw-input", placeholder: "bili_jct", value: cookie.bili_jct, onChange: (e) => setCookie((s) => ({ ...s, bili_jct: e.target.value })) }),
-                h("input", { className: "qbw-input", placeholder: "buvid3（可空）", value: cookie.buvid3, onChange: (e) => setCookie((s) => ({ ...s, buvid3: e.target.value })) }),
-                h(Btn, { kind: "qbw-btn2", onClick: saveCookie, disabled: !!busy || !cookie.sessdata || !cookie.bili_jct }, "写入凭据"),
-                cookieMsg ? h("div", { className: cookieMsg.startsWith("✓") ? "qbw-ok" : "qbw-err" }, cookieMsg) : null)),
-          accountCard,
-            h("div", { className: "qbw-card" }, h("h4", null, "待审核"),
-              h("p", null, "她回复别人之前，草稿先到这儿；你点「发」才发。"),
-              pending.length === 0 ? h("p", null, "（队列是空的）") : pending.map((x) => h("div", { key: x.id, className: "qbw-item", style: { marginTop: "6px" } },
-                h("div", null,
-                  h("div", { className: "qbw-label" }, `→ ${x.who || "对方"}`, h("span", { className: "qbw-badge" }, String(x.at ?? "").slice(5, 16).replace("T", " "))),
-                  x.src ? h("div", { className: "qbw-hint" }, `他说：${String(x.src).slice(0, 80)}`) : null,
-                  h("div", { className: "qbw-hint", style: { color: "var(--dsw-alias-label-primary)" } }, `你要回：${x.message}`)),
-                h("div", { style: { display: "flex", gap: "6px" } },
-                  h(Btn, { onClick: () => pendingAct("pending-approve", x.id), disabled: !!busy }, "发"),
-                  h(Btn, { kind: "qbw-btn2", onClick: () => pendingAct("pending-reject", x.id), disabled: !!busy }, "删")))),
-              pendingMsg ? h("div", { className: pendingMsg.startsWith("✓") ? "qbw-ok" : "qbw-err" }, pendingMsg) : null,
-              h("div", { className: "qbw-actions" }, h(Btn, { kind: "qbw-btn2", onClick: loadPending, disabled: !!busy }, "刷新待审")))),
-          query.trim() ? null : h(Section, { title: "口味权重 / 一键抓取", note: "每个偏好 0~5 权重；也能从你的 B站 观看历史/收藏夹里抓候选词", collapsible: false },
-            h("div", { style: { padding: "6px 0" } }, h(TasteEditor, { cfg, set, toast }))),
-          deps ? h("div", { className: "qbw-out" }, deps) : null),
-        qrFish ? h(BiliQrModal, {
-          target: "fish",
-          onClose: () => setQrFish(false),
-          onConfirmed: async (account) => {
-            setCookieMsg(`✓ 已绑定 ${account.name || account.mid}（${account.mid}）`);
-            await loadAccounts();
-            await verifyAccount("fish");
-            await reload();
-          },
-        }) : null);
-    }
 
     // ── 人格卡编辑器（嵌在「角色」页里，不再单开「人设」标签）──────────────
     // 用户反馈「人设 / 角色」两个栏目重复：角色包和人格卡本来就是同一件事的两面。
@@ -4257,513 +3415,6 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           "密钥只写在本机包内的 config.toml，不上传任何服务器。安装包不预置任何密钥，AppID 和 Access Key 都要自己填（别人的填进去会花别人的额度）。"));
     }
 
-    function VoiceTab({ toast }) {
-      const [packs, setPacks] = useState([]);
-      const [packsDir, setPacksDir] = useState("");
-      const [dirInput, setDirInput] = useState("");
-      const [mirror, setMirror] = useState("");
-      // 语音自检：三步（服务/合成/发送前置）各给结论，避免"语音坏了"只能靠猜。
-      const [ttsCheck, setTtsCheck] = useState(null);
-      const [ttsChecking, setTtsChecking] = useState(false);
-      const [rules, setRules] = useState(null);
-      const [err, setErr] = useState("");
-      const [busyId, setBusyId] = useState("");
-      const [pick, setPick] = useState("voice-local");
-      const [switchMsg, setSwitchMsg] = useState("");
-      const [msg, setMsg] = useState({});
-      const [importPick, setImportPick] = useState(null);
-      const [importErr, setImportErr] = useState(null);
-      const [importDone, setImportDone] = useState(null);
-
-      const load = useCallback(async () => {
-        try {
-          const r = await api("/voice/packs");
-          setPacks(r.packs || []);
-          setPacksDir(r.packsDir || "");
-          setDirInput((prev) => prev || r.packsDir || "");
-          setErr("");
-          setRules(await api("/voice/rules"));
-          const run = (r.packs || []).find((p) => p.running);
-          if (run) setPick(run.id);
-        } catch (e) { setErr(e.message); }
-      }, []);
-      useEffect(() => { load(); }, [load]);
-      // 页面刷新/切回来时，导入仍在后台跑：自动轮询，不能只靠发起导入的那个调用栈。
-      useEffect(() => {
-        const active = (packs || []).some((p) => p.import && p.import.phase !== "完成" && p.import.phase !== "失败");
-        if (!active) return undefined;
-        const t = setInterval(() => { load(); }, 1500);
-        return () => clearInterval(t);
-      }, [packs, load]);
-
-      const poll = useCallback(async (id, tries = 240) => {
-        for (let i = 0; i < tries; i += 1) {
-          await new Promise((r) => setTimeout(r, 1500));
-          try {
-            const r = await api("/voice/packs");
-            setPacks(r.packs || []);
-            const p = (r.packs || []).find((x) => x.id === id);
-            if (!p) return "failed";
-            if (p.install && p.install.phase === "失败") { setMsg((m) => ({ ...m, [id]: "✗ " + (p.install.error || "安装失败") })); return "failed"; }
-            if (p.installed && !p.install) return "ok";
-          } catch {}
-        }
-        return "timeout";
-      }, []);
-
-      const waitImport = async (id) => {
-        for (let i = 0; i < 900; i += 1) {
-          await new Promise((r) => setTimeout(r, 1000));
-          let r;
-          try { r = await api("/voice/packs"); } catch { continue; }
-          setPacks(r.packs || []);
-          const p = (r.packs || []).find((x) => x.id === id);
-          const im = p?.import;
-          if (!im) continue;
-          if (im.phase === "失败") {
-            if (im.code === "IMPORT_CANCELLED") {
-              if (toast) toast("已取消导入（旧包未动）");
-            } else {
-              setImportErr({ id, ...im });
-            }
-            await load();
-            return;
-          }
-          if (im.phase === "完成") {
-            setImportDone({ id, ...(im.result || {}) });
-            await load();
-            return;
-          }
-        }
-        setImportErr({ id, error: "导入进度长时间没有更新", hint: "检查桥接是否还在运行；如果文件仍在复制，稍等后刷新设置页。", code: "IMPORT_TIMEOUT" });
-      };
-
-      const startImportFlow = async (id) => {
-        setImportErr(null);
-        setImportDone(null);
-        let picked;
-        try {
-          picked = await browseNative("dir", `选择解压后的 ${id === "voice-local" ? "voice-local" : "voice-cloud"} 文件夹`);
-        } catch (e) {
-          setImportErr({ id, error: `选择框打不开：${e.message || e}`, hint: "可以手动把包放到设置页显示的安装目录后重启桥接；或检查是否在本机桌面运行。" });
-          return;
-        }
-        if (!picked?.ok) {
-          if (!picked?.cancelled) {
-            setImportErr({ id, error: picked?.error || "没有选到目录", hint: "重新点「导入离线包…」，选择解压出来的 voice-local / voice-cloud 文件夹。" });
-          }
-          return;
-        }
-        setBusyId("__import");
-        try {
-          const info = await api("/voice/packs/import-inspect", { method: "POST", body: { id, sourceDir: picked.path } });
-          setImportPick({ id, info });
-        } catch (e) {
-          setImportErr({ id, sourceDir: picked.path, error: e.message, code: e.code, hint: e.hint, missing: e.missing });
-        } finally {
-          setBusyId("");
-        }
-      };
-
-      const submitImport = async (allowUnverified = false) => {
-        const job = importPick;
-        if (!job) return;
-        setImportPick(null);
-        setBusyId("__import");
-        try {
-          await api("/voice/packs/import", { method: "POST", body: { id: job.id, sourceDir: job.info.sourceDir, allowUnverified } });
-          await waitImport(job.id);
-        } catch (e) {
-          if (e.code === "IMPORT_UNVERIFIED" && !allowUnverified) {
-            setImportPick({ ...job, unverified: true });
-          } else {
-            setImportErr({ id: job.id, sourceDir: job.info.sourceDir, error: e.message, code: e.code, hint: e.hint, missing: e.missing });
-          }
-        } finally {
-          setBusyId("");
-        }
-      };
-
-      const removeImportedSource = async (id, sourceDir) => {
-        if (!sourceDir) return;
-        if (!window.confirm(`删除导入用的源文件夹？\n\n${sourceDir}\n\n删除不影响 SurfCore 使用；zip 和父目录不会动。`)) return;
-        try {
-          const r = await api("/voice/packs/import-delete-source", { method: "POST", body: { id, sourceDir } });
-          setImportDone((d) => (d ? { ...d, sourceDir: null } : d));
-          if (toast) toast(`✓ 已删除源文件夹（释放 ${fmt(r.freedBytes || 0)}）`);
-          await load();
-        } catch (e) {
-          setImportErr({ id, error: e.message, code: e.code, hint: e.hint, missing: e.missing });
-        }
-      };
-
-      const removeImportBackup = async (id, backupDir) => {
-        if (!backupDir) return;
-        if (!window.confirm(`删除旧包备份？\n\n${backupDir}\n\n只有确认新包能正常启动/自检后才建议删除。`)) return;
-        try {
-          await api("/voice/packs/import-delete-backup", { method: "POST", body: { id, backupDir } });
-          setImportDone((d) => (d ? { ...d, backupDir: null } : d));
-          if (toast) toast("✓ 已删除旧包备份");
-          await load();
-        } catch (e) {
-          setImportErr({ id, error: e.message, code: e.code, hint: e.hint, missing: e.missing });
-        }
-      };
-
-      const runningId = ((packs.filter((p) => p.running)[0]) || {}).id || "";
-      const toggle = async () => {
-        setBusyId("__switch"); setSwitchMsg("");
-        try {
-          if (runningId === pick) {
-            await api("/voice/packs/stop", { method: "POST", body: { id: pick } });
-            setSwitchMsg("已停止");
-          } else {
-            const r = await api("/voice/packs/activate", { method: "POST", body: { id: pick } });
-            setSwitchMsg(r.ok ? "已启动：" + (pick === "voice-cloud" ? "云端" : "本地") : ("启动失败：" + (r.error || "")));
-          }
-          await load();
-        } catch (e) { setSwitchMsg("失败：" + e.message); }
-        finally { setBusyId(""); }
-      };
-
-      // 网盘离线包：Electron 里新窗口会被拦，交给宿主用系统浏览器打开；失败则复制链接兜底。
-      const NETDISK_URL = "https://pan.quark.cn/s/ec6cf2b123de?pwd=sxUZ";
-      const copyNetdisk = async () => {
-        try { await navigator.clipboard.writeText(NETDISK_URL); if (toast) toast("✓ 网盘链接已复制（提取码 sxUZ）"); }
-        catch (e) { if (toast) toast(`复制失败：${e.message}；链接：${NETDISK_URL}`); }
-      };
-      const openNetdisk = async () => {
-        try {
-          const r = await api("/voice/packs/netdisk", { method: "POST" });
-          if (r.ok) { if (toast) toast("✓ 已用浏览器打开网盘（提取码 sxUZ）"); return; }
-          if (toast) toast(`✗ ${r.error || "打不开浏览器"}${r.hint ? `；${r.hint}` : ""}`);
-        } catch (e) {
-          if (toast) toast(`✗ ${e.message}`);
-        }
-        await copyNetdisk();
-      };
-
-      const runTtsCheck = async () => {
-        setTtsChecking(true); setTtsCheck(null);
-        try {
-          const r = await api("/voice/tts-check", { method: "POST", body: {} });
-          setTtsCheck(r);
-          if (toast) toast(r.ok ? "✓ 语音自检通过" : `✗ 自检发现问题：${(r.stages || []).find((x) => !x.ok)?.name || "未知"}`);
-        } catch (e) {
-          setTtsCheck({ ok: false, error: e.message, stages: [] });
-          if (toast) toast(`✗ 自检失败：${e.message}`);
-        } finally { setTtsChecking(false); }
-      };
-
-      const stageRow = (st) => h("div", {
-        key: st.name,
-        style: { marginTop: "6px", padding: "6px 8px", borderRadius: "6px", background: st.ok ? "rgba(103,194,58,.10)" : "rgba(192,57,43,.12)" },
-      },
-        h("div", { style: { fontWeight: 600 } },
-          `${st.ok ? "✅" : "❌"} ${st.name === "service" ? "服务" : st.name === "synth" ? "合成" : "发送前置"}`,
-          st.ms ? h("span", { style: { fontWeight: 400, opacity: 0.7, marginLeft: "6px" } }, `${st.ms}ms`) : null),
-        st.detail ? h("div", { className: "qbw-hint", style: { marginTop: "2px" } }, st.detail) : null,
-        st.hint ? h("div", { className: "qbw-hint", style: { marginTop: "2px" } }, `建议：${st.hint}`) : null);
-
-      const act = async (id, action, body) => {
-        setBusyId(id);
-        setMsg((m) => ({ ...m, [id]: action === "install" ? "开始安装…" : "处理中…" }));
-        try {
-          await api("/voice/packs/" + action, { method: "POST", body: { id, ...(action === "install" ? { mirror } : {}), ...(body || {}) } });
-          if (action === "install") {
-            const done = await poll(id);
-            setMsg((m) => ({
-              ...m,
-              [id]: done === "ok"
-                ? (id === "voice-cloud"
-                  ? "✓ 安装完成 — 下一步：在下方「云端包：密钥与音色」填 AppID / Access Key / 音色 ID，否则启动不了"
-                  : "✓ 安装完成")
-                : done === "failed" ? "✗ 安装失败：见上方进度条下方的原因"
-                  : "⏳ 还在安装（依赖阶段可能要几十分钟）；卡住可以点「取消安装」再来",
-            }));
-          }
-          else setMsg((m) => ({ ...m, [id]: "" }));
-          await load();
-          if (action === "install" && id === "voice-cloud") {
-            // 装完直接滚到密钥表单：新装不预置任何凭据，这一步不做云端包就是死的。
-            setTimeout(() => {
-              try { document.getElementById("surfcore-cloud-voice-form")?.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
-            }, 300);
-          }
-        } catch (e) {
-          setMsg((m) => ({ ...m, [id]: e.message }));
-        } finally { setBusyId(""); }
-      };
-
-      const fmt = (b) => (b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB");
-      const saveRules = async () => {
-        try { await api("/voice/rules", { method: "POST", body: rules }); toast("✓ 触发规则已保存"); }
-        catch (e) { toast("✗ " + e.message); }
-      };
-
-      const card = (p) => h("div", {
-        key: p.id,
-        style: { border: "1px solid var(--dsw-alias-border-l2)", borderRadius: "10px", padding: "12px", marginBottom: "10px" },
-      },
-        h("div", { style: { display: "flex", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" } },
-          h("strong", null, p.name),
-          h("span", { style: { opacity: 0.75, fontSize: "12px" } },
-            fmt(p.sizeBytes) + " · 端口 " + p.port + " · " + (p.install
-              ? p.install.phase + " " + p.install.progress + "%"
-              : p.running
-                ? ((p.external ? "● 运行中（外部目录）" : "● 运行中")
-                  + (p.enginePort && p.engineUp === false ? " · ⚠️ 音色引擎未起" : ""))
-                : p.installed ? (p.needsCloudConfig ? "○ 已安装 · 待填云端密钥" : "○ 已安装 · 未运行") : "未安装"))),
-        h("div", { style: { opacity: 0.8, margin: "6px 0", fontSize: "13px" } }, p.about && p.about.summary ? p.about.summary : ""),
-        h("div", { style: { display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px", opacity: 0.8 } },
-          h("ul", { style: { margin: 0, paddingLeft: "18px" } }, ((p.about && p.about.pros) || []).map((x) => h("li", { key: x }, x))),
-          h("ul", { style: { margin: 0, paddingLeft: "18px", opacity: 0.7 } }, ((p.about && p.about.cons) || []).map((x) => h("li", { key: x }, x)))),
-        p.about && p.about.billing ? h("div", { style: { fontSize: "12px", marginTop: "6px", opacity: 0.75 } },
-          p.about.billing, h("br"), p.about.disclaimer || "") : null,
-        (p.install || busyId === p.id)
-          ? h("div", null,
-            h(ProgressBar, {
-              pct: p.install?.progress ?? 0,
-              // 依赖阶段没有百分比：显示"已 X 分钟 + 最近在装什么"，否则用户不知道卡没卡
-              phase: (() => {
-                if (!p.install) return "正在启动安装…";
-                const mins = Math.max(0, Math.round((Date.now() - Number(p.install.startedAt || Date.now())) / 60000));
-                const tail = String(p.install.logTail || "").split(String.fromCharCode(10)).filter(Boolean).pop() || "";
-                const phase = String(p.install.phase || "安装中");
-                // 阶段名里已经带百分比时不再拼日志尾，避免出现"下载中 93%…下载中 93%"
-                const showTail = tail && !/%/.test(phase);
-                return `${phase} · 已 ${mins} 分钟${showTail ? ` · ${tail.slice(-60)}` : ""}`;
-              })(),
-              err: p.install?.error,
-              indeterminate: !p.install || (/依赖|模型/.test(String(p.install.phase || '')) && Number(p.install.progress || 0) >= 99),
-            }),
-            p.install && p.install.phase !== "完成" && p.install.phase !== "失败"
-              ? h("div", { style: { marginTop: "6px" } },
-                h(Btn, { kind: "qbw-btn2", onClick: async () => {
-                  try {
-                    await api("/voice/packs/cancel", { method: "POST", body: { id: p.id } });
-                    if (toast) toast("已取消安装（已下载的模型会保留）");
-                    await load();
-                  } catch (e) { if (toast) toast(`✗ ${e.message}`); }
-                } }, "取消安装"))
-              : null)
-          : null,
-        p.import && p.import.phase !== "完成" && p.import.phase !== "失败"
-          ? h("div", { style: { marginTop: "8px" } },
-            h(ProgressBar, { pct: p.import.progress, phase: p.import.phase, indeterminate: p.import.progress < 5 }),
-            h("div", { style: { marginTop: "6px" } },
-              h(Btn, { kind: "qbw-btn2", onClick: async () => {
-                try { await api("/voice/packs/import-cancel", { method: "POST", body: { id: p.id } }); if (toast) toast("正在取消导入…"); await load(); }
-                catch (e) { if (toast) toast(`✗ ${e.message}`); }
-              } }, "取消导入")))
-          : null,
-        p.import && p.import.phase === "失败" && p.import.error
-          ? h("div", { className: "qbw-err", style: { marginTop: "6px" } }, `导入失败：${p.import.error}`, p.import.hint ? ` — ${p.import.hint}` : "")
-          : null,
-        p.installed && p.dir ? h("div", { style: { fontSize: "12px", marginTop: "4px", opacity: 0.7 } }, "路径：", h("code", null, p.dir)) : null,
-        p.id === "voice-cloud" && p.needsCloudConfig
-          ? h("div", { style: { fontSize: "12px", marginTop: "4px", opacity: 0.9, color: "#e6a23c" } },
-            "还没有密钥：安装包不预置任何凭据，请到本页下方「云端包：密钥与音色」填 AppID / Access Key / 音色 ID，否则云端语音启动不了。")
-          : null,
-        p.enginePort && p.running && p.engineUp === false
-          ? h("div", { style: { fontSize: "12px", marginTop: "4px", opacity: 0.85 } },
-            `本地音色引擎（GPT-SoVITS ${p.enginePort}）还没起来：点「启动」会自动拉起，约 40 秒后再试；期间发语音会失败。`)
-          : null,
-        h("div", { style: { display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap", alignItems: "center" } },
-          !p.installed ? h(Btn, { disabled: busyId === p.id, onClick: () => act(p.id, "install") }, "安装（" + fmt(p.sizeBytes) + "）") : null,
-          h(Btn, { kind: "qbw-btn2", disabled: busyId === "__import" || (p.import && p.import.phase !== "完成" && p.import.phase !== "失败"), onClick: () => startImportFlow(p.id) },
-            p.installed ? "重新导入离线包…" : "导入离线包…"),
-          p.external ? h("span", { style: { fontSize: "12px", opacity: 0.7 } }, p.dir ? `已在别处安装：${p.dir}` : "已在别处安装（端口在跑）") : null,
-          p.external && p.dir
-            ? h(Btn, { kind: "qbw-btn2", onClick: async () => {
-              const parent = String(p.dir).replace(/[\/][^\/]+$/, "");
-              try {
-                await api("/config", { method: "POST", body: { qq: { voicePacks: { dir: parent.split("\\").join("/") } } } });
-                if (toast) toast(`✓ 安装目录已指向 ${parent}`);
-                await load();
-              } catch (e) { if (toast) toast(`✗ ${e.message}`); }
-            } }, "把安装目录设为这里")
-            : null,
-          p.installed ? h(Btn, { kind: "qbw-btn2", disabled: busyId === p.id, onClick: () => act(p.id, "remove") }, "卸载") : null,
-          !p.installed ? h(Btn, { kind: "qbw-btn2", onClick: async () => {
-            try {
-              const r = await api("/voice/packs/clean", { method: "POST", body: { id: p.id } });
-              const mb = ((r.freedBytes || 0) / 1024 / 1024).toFixed(1);
-              toast(`✓ 已清理未完成的下载（${mb} MB）`);
-              await load();
-            } catch (e) { toast(`✗ ${e.message}`); }
-          } }, "清理下载残留") : null,
-          msg[p.id] ? h("span", { style: { fontSize: "12px", opacity: 0.8 } }, msg[p.id]) : null));
-
-      const cloud = packs.find((p) => p.id === "voice-cloud");
-      return h("div", null,
-        h("div", { style: { fontSize: "13px", opacity: 0.85, marginBottom: "10px" } },
-          "语音引擎不随插件分发。不装也能正常聊天，只是不能发语音。两个包互相独立，可只装一个。"),
-        err ? h("div", { className: "qbw-err" }, err) : null,
-        h("div", { style: { marginTop: "14px", padding: "12px", border: "1px solid var(--dsw-alias-border-l2)", borderRadius: "10px" } },
-          h("div", { style: { display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", fontSize: "13px" } },
-            h("strong", null, "使用"),
-            h("label", { style: { display: "flex", gap: "6px", alignItems: "center" } },
-              h("input", { type: "radio", name: "voicePick", checked: pick === "voice-local", onChange: () => setPick("voice-local") }), "本地语音包"),
-            h("label", { style: { display: "flex", gap: "6px", alignItems: "center" } },
-              h("input", { type: "radio", name: "voicePick", checked: pick === "voice-cloud", onChange: () => setPick("voice-cloud") }), "云端语音包"),
-            h(Btn, { disabled: busyId === "__switch", onClick: toggle }, busyId === "__switch" ? "处理中…" : (runningId === pick ? "停止" : "启动")),
-            h("span", { style: { fontSize: "13px" } }, "语音系统：",
-              runningId
-                ? h("b", { style: { color: "#67c23a" } }, "● 已启动")
-                : h("b", { style: { color: "#909399" } }, "○ 未启动")),
-            h("span", { style: { fontSize: "13px" } }, "当前：",
-              h("b", null, (runningId || pick) === "voice-cloud" ? "云端语音包" : "本地语音包"))),
-          switchMsg ? h("div", { style: { fontSize: "12px", marginTop: "6px", opacity: 0.85 } }, switchMsg) : null,
-          h("div", { style: { fontSize: "12px", opacity: 0.65, marginTop: "6px" } }, "只能运行一个；切换会自动停掉另一个。")),
-        packs.map(card),
-        h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-          h("h4", null, "语音自检"),
-          h("div", { className: "qbw-hint", style: { marginTop: "2px" } },
-            "三步分开看：服务是否在跑 → 能不能合成 → 能不能发（不真的发消息）。出问题时把结果发给开发者。"),
-          h("div", { className: "qbw-actions", style: { marginTop: "8px" } },
-            h(Btn, { onClick: runTtsCheck, disabled: ttsChecking }, ttsChecking ? "检测中…（合成可能要几秒）" : "开始自检")),
-          ttsCheck ? h("div", { style: { marginTop: "8px" } },
-            (ttsCheck.stages || []).map(stageRow),
-            ttsCheck.ok ? null : h("div", { className: "qbw-hint", style: { marginTop: "6px" } }, `route=${ttsCheck.route || "?"} · ${ttsCheck.error || ""}`)
-          ) : null),
-        h("div", { style: { marginTop: "10px", padding: "10px 12px", borderRadius: "10px", border: "1px solid rgba(230,162,60,.45)", background: "rgba(230,162,60,.08)" } },
-          h("div", { style: { fontSize: "13px", fontWeight: 600 } }, "网络不稳定装不上？用网盘下载离线包（本地包 / 云端包都适用）"),
-          h("div", { style: { fontSize: "12px", opacity: 0.85, marginTop: "2px" } },
-            "网盘里是完整的离线包。下载解压后，点对应卡片的「导入离线包…」，选择解压出来的 voice-local 或 voice-cloud 文件夹；导入会校验文件、保留旧包备份，失败会告诉你缺什么。"),
-          h("div", { style: { fontSize: "12px", opacity: 0.8, marginTop: "2px" } },
-            "语音包不参与 SurfCore 的「检查更新」：它是离线运行时/模型/vendor 包，不是代码 zip。需要新版本时用「重新导入离线包…」，导入会保留 config.toml、.venv、models、vendor。"),
-          h("div", { style: { display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap", alignItems: "center" } },
-            h(Btn, { onClick: openNetdisk }, "打开网盘下载（提取码 sxUZ）"),
-            h(Btn, { kind: "qbw-btn2", onClick: copyNetdisk }, "复制链接"),
-            h("span", { style: { fontSize: "12px", opacity: 0.7 } }, "装完仍要按卡片提示启动/填密钥"))),
-
-        h("div", { style: { marginTop: "10px", padding: "10px 12px", border: "1px solid var(--dsw-alias-border-l2)", borderRadius: "10px" } },
-          h("div", { style: { fontSize: "13px", fontWeight: 600 } }, "下载链路"),
-          h("div", { style: { fontSize: "12px", opacity: 0.75, marginTop: "2px" } },
-            "官方源慢或连不上时换镜像。内容都有 sha256 校验，镜像方看不到你的会话，但能看到你下了什么。"),
-          h("div", { style: { display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" } },
-            ...[
-              { id: "", label: "官方（GitHub）" },
-              { id: "https://ghfast.top", label: "镜像 · ghfast" },
-              { id: "https://gh-proxy.com", label: "镜像 · gh-proxy" },
-              { id: "https://ghproxy.net", label: "镜像 · ghproxy" },
-            ].map((opt) => h(Btn, {
-              key: opt.id || "official",
-              kind: mirror === opt.id ? "qbw-btn" : "qbw-btn2",
-              onClick: () => setMirror(opt.id),
-            }, (mirror === opt.id ? "● " : "") + opt.label))),
-          h("div", { style: { fontSize: "12px", opacity: 0.65, marginTop: "6px" } },
-            mirror ? `当前：${mirror}（下载时会拼在原地址前面）` : "当前：官方源；分卷下载默认 3 路并发")),
-        h("div", { style: { marginTop: "10px", padding: "10px 12px", border: "1px solid var(--dsw-alias-border-l2)", borderRadius: "10px" } },
-          h("div", { style: { fontSize: "13px", fontWeight: 600 } }, "安装目录"),
-          h("div", { style: { fontSize: "12px", opacity: 0.75, marginTop: "2px" } },
-            "默认在 ~/.dsh/surfcore/state/voice-packs；磁盘紧张或用户目录只读时改到这里。改完要重启桥接，已装的包请手动移动过去。安装依赖默认走清华源（可用 SURFCORE_PIP_INDEX 覆盖）。"),
-          h("div", { style: { display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" } },
-            h("input", { className: "qbw-input", value: dirInput, placeholder: packsDir || "D:/voice-packs", style: { flex: "1 1 320px" }, onChange: (e) => setDirInput(e.target.value) }),
-            h(Browse, { mode: "dir", title: "选择语音包安装目录", onPick: (v) => setDirInput(v) }),
-            h(Btn, { kind: "qbw-btn2", onClick: async () => {
-              const next = String(dirInput || "").trim();
-              if (!next) { toast("✗ 目录不能为空"); return; }
-              if (!/^[A-Za-z]:/.test(next) && !next.startsWith("/")) { toast("✗ 请填绝对路径，例如 D:/voice-packs"); return; }
-              try {
-                await api("/config", { method: "POST", body: { qq: { voicePacks: { dir: next.split(String.fromCharCode(92)).join("/") } } } });
-                toast("✓ 已保存；重启桥接后生效（已装的包请先移动到新目录）");
-                await load();
-              } catch (e) { toast(`✗ ${e.message}`); }
-            } }, "保存路径")),
-          h("div", { style: { fontSize: "12px", opacity: 0.65, marginTop: "6px" } }, "当前生效：", h("code", null, packsDir || "（读不到）"))),
-        h("div", { className: "qbw-hint", style: { marginTop: "10px" } },
-          "⚠️ 改完语音总开关 / TTS / 发语音工具后，需要重启 DSH：工具列表在 MCP 进程启动时就固定了，不重启她还会说“没有语音入口”。"),
-
-        cloud && cloud.installed ? h(CloudForm, { toast }) : null,
-
-        importPick ? h("div", { className: "qbw-modal-backdrop", onClick: (e) => { if (e.target === e.currentTarget) setImportPick(null); } },
-          h("div", { className: "qbw-modal" },
-            h("h3", null, "确认导入离线包"),
-            h("div", { style: { fontSize: "13px", lineHeight: "1.8" } },
-              h("div", null, "类型：", h("b", null, importPick.id === "voice-local" ? "本地语音包（voice-local）" : "云端语音包（voice-cloud）")),
-              h("div", null, "来源：", h("code", null, importPick.info.sourceDir)),
-              h("div", null, "目标：", h("code", null, importPick.info.targetDir || "标准安装目录")),
-              h("div", null, "大小：", fmt(importPick.info.sizeBytes)),
-              h("div", null, "版本：", importPick.info.version || "—"),
-              h("div", null, "完整性：", importPick.info.verified ? "manifest 已校验" : "未验证（没有 manifest 或未声明哈希）")),
-            (importPick.info.warnings || []).length
-              ? h("div", { className: "qbw-hint", style: { marginTop: "8px" } },
-                (importPick.info.warnings || []).map((w, i) => h("div", { key: i }, "⚠️ ", w.message, w.hint ? ` ${w.hint}` : "")))
-              : null,
-            h("div", { className: "qbw-actions" },
-              h(Btn, { kind: "qbw-btn2", onClick: () => setImportPick(null) }, "取消"),
-              h(Btn, { onClick: () => submitImport(!importPick.info.verified) },
-                importPick.info.verified ? "开始导入" : "仍要导入（未验证）")))
-        ) : null,
-
-        importErr ? h(ErrorModal, {
-          title: "离线包导入失败",
-          message: [
-            importErr.code ? `错误代码：${importErr.code}` : "",
-            importErr.error || "导入失败",
-            (importErr.missing || []).length ? `缺失：${importErr.missing.join("、")}` : "",
-          ].filter(Boolean).join("；"),
-          hint: importErr.hint || "重新选择目录；如果包不完整，重新下载后再导入。",
-          actions: [
-            importErr.id ? {
-              label: "重新选择目录",
-              onClick: () => { const id = importErr.id; setImportErr(null); startImportFlow(id); },
-            } : null,
-            importErr.id && importErr.code === "IMPORT_TARGET_RUNNING" ? {
-              label: "先停止语音包",
-              onClick: async () => {
-                try {
-                  await api("/voice/packs/stop", { method: "POST", body: { id: importErr.id } });
-                  const id = importErr.id; setImportErr(null); startImportFlow(id);
-                } catch (e) { if (toast) toast(`✗ ${e.message}`); }
-              },
-            } : null,
-          ].filter(Boolean),
-          onClose: () => setImportErr(null),
-        }) : null,
-
-        importDone ? h("div", { className: "qbw-modal-backdrop", onClick: (e) => { if (e.target === e.currentTarget) setImportDone(null); } },
-          h("div", { className: "qbw-modal" },
-            h("h3", null, "已导入，尚未验证运行"),
-            h("div", { style: { fontSize: "13px", lineHeight: "1.8" } },
-              h("div", null, "目标：", h("code", null, importDone.targetDir || "")),
-              importDone.sourceDir ? h("div", null, "源文件夹仍保留：", h("code", null, importDone.sourceDir)) : null,
-              importDone.backupDir ? h("div", null, "旧包备份：", h("code", null, importDone.backupDir)) : null,
-              h("div", null, "完整性：", importDone.verified ? "manifest 已校验" : "未验证")),
-            h("div", { className: "qbw-hint", style: { marginTop: "8px" } },
-              "文件已导入；语音服务能否正常出声还没有验证。请点「启动语音包」后再试一条语音；有旧包备份时，确认新包可用前不要删除。"),
-            h("div", { className: "qbw-actions" },
-              h(Btn, { onClick: async () => { setImportDone(null); await act(importDone.id, "start"); } }, "启动语音包"),
-              importDone.sourceDir && !importDone.alreadyInPlace
-                ? h(Btn, { kind: "qbw-btn2", onClick: () => removeImportedSource(importDone.id, importDone.sourceDir) }, "删除源文件夹")
-                : null,
-              importDone.backupDir
-                ? h(Btn, { kind: "qbw-btn2", onClick: () => removeImportBackup(importDone.id, importDone.backupDir) }, "删除旧备份")
-                : null,
-              h(Btn, { kind: "qbw-btn2", onClick: () => setImportDone(null) }, "关闭")))
-        ) : null,
-
-        rules ? h("div", { style: { marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--dsw-alias-border-l2)" } },
-          h("strong", null, "触发规则"),
-          h("div", { style: { display: "flex", gap: "10px", alignItems: "center", marginTop: "8px", flexWrap: "wrap", fontSize: "13px" } },
-            "允许谁触发",
-            h("select", { value: rules.triggerWho, onChange: (e) => setRules({ ...rules, triggerWho: e.target.value }), style: { width: "180px" } },
-              h("option", { value: "owner" }, "仅主人（推荐）"),
-              h("option", { value: "anyone" }, "任何人"),
-              h("option", { value: "list" }, "指定成员"))),
-          h("div", { style: { display: "flex", gap: "10px", alignItems: "center", marginTop: "8px", flexWrap: "wrap", fontSize: "13px" } },
-            "频率上限",
-            h("input", { type: "number", min: 1, max: 60, value: rules.maxPerMinute, onChange: (e) => setRules({ ...rules, maxPerMinute: Number(e.target.value) }), style: { width: "70px" } }), "条/分钟",
-            h("input", { type: "number", min: 1, max: 600, value: rules.maxPerHour, onChange: (e) => setRules({ ...rules, maxPerHour: Number(e.target.value) }), style: { width: "70px" } }), "条/小时"),
-          h("label", { style: { display: "flex", gap: "6px", alignItems: "center", marginTop: "8px", fontSize: "13px" } },
-            h("input", { type: "checkbox", checked: !!rules.aiEnabled, onChange: (e) => setRules({ ...rules, aiEnabled: e.target.checked }) }),
-            "允许 AI 主动发语音（默认关；关着只有你手动试发才出声）"),
-          h("div", { style: { marginTop: "8px" } }, h(Btn, { onClick: saveRules }, "保存触发规则")),
-          h("div", { style: { fontSize: "12px", opacity: 0.7, marginTop: "6px" } },
-            "仅主人可触发：群聊里最后一条消息必须是你发的（5 分钟内），且一条消息最多换一条语音。")) : null);
-    }
 
     function MemoryTab({ qq, unified, setUnified, overview, busy, setBusy, toast, reload }) {
       const [data, setData] = useState(null);
@@ -4877,137 +3528,6 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
     }
 
     // ── 身份对齐 ────────────────────────────────────────────────────────────
-    function AlignTab({ busy, setBusy, toast, reload }) {
-      const [data, setData] = useState(null);
-      const [err, setErr] = useState("");
-      const [form, setForm] = useState({ qqId: "", qqName: "", qqGroups: "", biliId: "", biliName: "", label: "", note: "" });
-      const load = useCallback(async () => {
-        try { const r = await api("/align"); setData(r); setErr(""); } catch (e) { setErr(e.message); }
-      }, []);
-      useEffect(() => { load(); }, [load]);
-      // 旧宿主不会返回 labelsSupported：先禁用称呼输入，避免“提示成功但其实没存进去”。
-      const labelsReady = data ? data.labelsSupported === true : true;
-      const add = async () => {
-        setBusy("align-add");
-        try {
-          const link = {
-            identities: {
-              ...(form.qqId ? { qq: { id: form.qqId, name: form.qqName, groups: form.qqGroups.split(/[,，]/).map((s) => s.trim()).filter(Boolean) } } : {}),
-              ...(form.biliId ? { bili: { id: form.biliId, name: form.biliName } } : {}),
-            },
-            label: form.label.trim(),
-            source: "manual",
-            confidence: 1,
-            verified: true,
-            note: form.note,
-          };
-          await api("/align", { method: "POST", body: { action: "add", link } });
-          toast(form.label.trim() ? `✓ 已添加对齐：以后只叫「${form.label.trim()}」` : "✓ 已添加对齐");
-          setForm({ qqId: "", qqName: "", qqGroups: "", biliId: "", biliName: "", label: "", note: "" });
-          await load(); await reload();
-        } catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const act = async (action, id, extra = {}) => {
-        setBusy(action + id);
-        try { await api("/align", { method: "POST", body: { action, id, ...extra } }); toast("✓ 完成"); await load(); await reload(); }
-        catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      // 只改称呼：简报由宿主立刻重建，下一条 QQ 消息 / B站下一次醒来就生效。
-      const saveLabel = async (id, label) => {
-        setBusy("align-label-" + id);
-        try {
-          await api("/align", { method: "POST", body: { action: "update", id, link: { label } } });
-          toast(label ? `✓ 以后只叫「${label}」` : "✓ 已清掉称呼");
-          await load(); await reload();
-        } catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const scan = async () => {
-        setBusy("align-scan");
-        try { const r = await api("/align", { method: "POST", body: { action: "scan" } }); toast(`✓ 扫描完成：QQ +${r.qq?.added ?? 0}，B站 +${r.bili?.added ?? 0}`); await load(); await reload(); }
-        catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-      };
-      const exportJson = () => {
-        if (!data) return;
-        const payload = { exportedAt: new Date().toISOString(), links: data.links };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `qq-bili-align-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      };
-      const importFile = (file) => {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          try {
-            const payload = JSON.parse(String(reader.result ?? "{}"));
-            setBusy("align-import");
-            await api("/align", { method: "POST", body: { action: "import", payload, merge: true } });
-            toast("✓ 已导入");
-            await load(); await reload();
-          } catch (e) { toast(`✗ ${e.message}`); } finally { setBusy(""); }
-        };
-        reader.readAsText(file);
-      };
-      return h("div", null,
-        h("div", { className: "qbw-infobox" },
-          "这一层高于记忆同步开关：即使两边记忆同步都关掉，只要对齐开着，人格卡仍然认得出同一个人。",
-          "给群友填一个「称呼」：以后 QQ 和 B站 都只用这个叫法，不会再叫成 QQ 群名片或 B站昵称那样尴尬。",
-          "对齐只存「平台账号 ↔ 平台账号」的映射，不存对话内容；在 B 站公开场合禁止写出 QQ 号/群号。"),
-        labelsReady ? null : h("div", { className: "qbw-warnbox" },
-          "⚠️ 当前宿主还是旧代码：称呼暂时存不进去（保存也不会报错，但会被丢弃）。重启 DSH 后这里就能用了；其它对齐功能不受影响。"),
-        h("div", { className: "qbw-card" },
-          h("h4", null, "手动添加"),
-          h("div", { className: "qbw-alias" },
-            h("div", { className: "qbw-alias-title" },
-              "以后只叫他（称呼）",
-              h("span", { className: "qbw-badge" }, "优先于群名片 / B站昵称 / 人格卡称呼表")),
-            h("div", { className: "qbw-hint" }, "填了称呼：QQ 和 B站 都只用它叫这个人。只有 QQ 或只有 B站 也可以填（那个人只会出现在有账号的那一侧）。留空 = 不设称呼，照旧按昵称叫。"),
-            h("input", {
-              className: "qbw-input", placeholder: "例如 小零",
-              value: form.label,
-              disabled: !labelsReady,
-              onChange: (e) => setForm((s) => ({ ...s, label: e.target.value })),
-            })),
-          h("div", { className: "qbw-grid" },
-            h("div", null,
-              h("div", { className: "qbw-hint" }, "QQ 侧"),
-              h("input", { className: "qbw-input", placeholder: "QQ 号", value: form.qqId, onChange: (e) => setForm((s) => ({ ...s, qqId: e.target.value })) }),
-              h("input", { className: "qbw-input", placeholder: "群昵称", value: form.qqName, onChange: (e) => setForm((s) => ({ ...s, qqName: e.target.value })) }),
-              h("input", { className: "qbw-input", placeholder: "所在群号（逗号分隔，可空）", value: form.qqGroups, onChange: (e) => setForm((s) => ({ ...s, qqGroups: e.target.value })) })),
-            h("div", null,
-              h("div", { className: "qbw-hint" }, "B站侧"),
-              h("input", { className: "qbw-input", placeholder: "B站 mid", value: form.biliId, onChange: (e) => setForm((s) => ({ ...s, biliId: e.target.value })) }),
-              h("input", { className: "qbw-input", placeholder: "B站昵称", value: form.biliName, onChange: (e) => setForm((s) => ({ ...s, biliName: e.target.value })) }),
-              h("input", { className: "qbw-input", placeholder: "备注（可选）", value: form.note, onChange: (e) => setForm((s) => ({ ...s, note: e.target.value })) }))),
-          h("div", { className: "qbw-actions" },
-            h(Btn, { onClick: add, disabled: !!busy || (!form.qqId && !form.biliId) }, "添加对齐"),
-            h(Btn, { kind: "qbw-btn2", onClick: scan, disabled: !!busy }, "扫描候选"),
-            h(Btn, { kind: "qbw-btn2", onClick: exportJson, disabled: !!busy }, "导出"),
-            h("label", { className: "qbw-btn qbw-btn2", style: { display: "inline-flex", alignItems: "center", cursor: "pointer" } },
-              "导入", h("input", { type: "file", accept: ".json,application/json", style: { display: "none" }, onChange: (e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; } })))),
-        h(AdvancedSettings, { note: "候选对齐 / 自动扫描结果：默认不生效，确认后才写入" },
-          h(Section, { title: `候选人（${data?.candidates?.length ?? 0}）`, note: "默认需要你批准，不会自动生效", collapsible: false },
-            (data?.candidates ?? []).length === 0 ? h("div", { className: "qbw-hint", style: { padding: "6px 0" } }, "（没有候选；群友在群里说「我B站是…」后点「扫描候选」）") :
-              (data.candidates ?? []).map((c) => h("div", { className: "qbw-item", key: c.id },
-                h("div", null,
-                  h("div", { className: "qbw-label" }, `${c.platform === "qq" ? "QQ" : "B站"} ${c.identity?.name || c.identity?.id} → ${c.counterpartPlatform === "qq" ? "QQ" : "B站"} ${c.counterpart?.name || c.counterpart?.id || "（待补）"}`),
-                  h("div", { className: "qbw-hint" }, `${c.source} · 置信度 ${(Number(c.confidence) || 0).toFixed(2)} · ${c.evidence || ""}`)),
-                h("div", { style: { display: "flex", gap: "6px" } },
-                  h(Btn, { onClick: () => act("approve", c.id), disabled: !!busy }, "确认"),
-                  h(Btn, { kind: "qbw-btn2", onClick: () => act("reject", c.id), disabled: !!busy }, "否定")))))),
-        h(Section, { title: `已对齐（${data?.links?.length ?? 0}）`, note: "QQ ⇄ B站 · 称呼可直接改", defaultOpen: true },
-          (data?.links ?? []).length === 0 ? h("div", { className: "qbw-hint", style: { padding: "6px 0" } }, "（还没有对齐记录）") :
-            h("table", { className: "qbw-table" },
-              h("thead", null, h("tr", null, h("th", null, "QQ"), h("th", null, "B站"), h("th", null, "称呼（只叫这个）"), h("th", null, "来源"), h("th", null, "操作"))),
-              h("tbody", null, (data.links ?? []).map((link) => h("tr", { key: link.id },
-                h("td", null, `${link.identities?.qq?.name || "?"}`, h("div", { className: "qbw-hint" }, link.identities?.qq?.id ?? "")),
-                h("td", null, `${link.identities?.bili?.name || "?"}`, h("div", { className: "qbw-hint" }, link.identities?.bili?.id ?? "")),
-                h("td", null, h(AliasCell, { link, onSave: saveLabel, busy: !!busy, disabled: !labelsReady })),
-                h("td", null, link.source || "manual"),
-                h("td", null, h(Btn, { kind: "qbw-btn2", onClick: () => act("remove", link.id), disabled: !!busy }, "删除"))))))),
-        err ? h("div", { className: "qbw-err" }, err) : null);
-    }
 
     // ── 扩展与平台 ──────────────────────────────────────────────────────────
     function ExtensionsTab({ busy, setBusy, toast, reload }) {
@@ -5725,191 +4245,6 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
     }
 
     // ── 桌宠页：独立栏目，默认不安装，用户自己装 ───────────────────────────
-    function PetTab({ toast, unified, setUnified }) {
-      const [st, setSt] = useState(null);
-      const [busy, setBusy] = useState("");
-      const [err, setErr] = useState("");
-      const [form, setForm] = useState({ source: "", electronPath: "", appDir: "", mirror: "" });
-      const chatCfg = unified?.pet?.chat && typeof unified.pet.chat === "object" ? unified.pet.chat : {};
-      const setChat = (key, value) => setUnified?.(["pet", "chat", key], value);
-
-      const read = useCallback(async () => {
-        try {
-          const r = await api("/pet/status");
-          setSt(r);
-          setForm((f) => ({
-            source: (r.source && r.source.trim()) ? r.source : (r.installed ? f.source : (r.defaults?.zipUrl || f.source)),
-            electronPath: (r.electronPath && r.electronPath.trim()) ? r.electronPath : (r.electronDetected || f.electronPath),
-            appDir: r.appDir ?? f.appDir,
-            mirror: r.mirror ?? f.mirror ?? "",
-          }));
-          setErr("");
-        } catch (e) { setErr(e.message); }
-      }, []);
-      useEffect(() => { read(); }, [read]);
-
-      const act = async (action, body, busyKey) => {
-        setBusy(busyKey || action); setErr("");
-        try {
-          const r = await api("/pet/" + action, { method: "POST", body: body ?? {} });
-          if (r.ok === false) { setErr(r.error || "操作失败"); return; }
-          if (toast) toast(action === "install" ? "✓ 桌宠安装完成" : action === "start" ? "✓ 桌宠已启动" : action === "stop" ? "✓ 桌宠已停止" : action === "remove" ? "✓ 桌宠已卸载" : "✓ 已保存");
-          await read();
-        } catch (e) { setErr(e.message); }
-        finally { setBusy(""); }
-      };
-
-      // 专注模式：写 pet/focus.json（桌宠菜单也改同一份），并推事件让桌面立刻收住。
-      const actFocus = async (enabled) => {
-        setBusy("focus"); setErr("");
-        try {
-          const r = await api("/pet/focus", { method: "POST", body: { enabled, source: "settings" } });
-          if (r.ok === false) throw new Error(r.error || "设置失败");
-          if (toast) toast(`✓ 专注模式已${enabled ? "开启：不再主动打扰" : "关闭"}`);
-          await read();
-        } catch (e) { setErr(e.message); }
-        finally { setBusy(""); }
-      };
-
-      const fmt = (n) => {
-        const v = Number(n) || 0;
-        return v > 1024 * 1024 ? (v / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(v / 1024)) + " KB";
-      };
-      const kv = (k, v) => h("div", { className: "qbw-kv", key: k }, h("span", null, k), h("span", null, v));
-
-      return h("div", null,
-        h("div", { className: "qbw-infobox" },
-          "桌宠是独立组件：不随 SurfCore 安装，也不影响 QQ / B站 / 记忆 / 语音。",
-          "填安装包地址 → 安装 → 填 Electron 路径 → 启动。卸载只删 ~/.dsh/surfcore/pet/app，不碰你的皮肤工程。"),
-        h("div", { className: "qbw-card" },
-          h("h4", null, "运行状态"),
-          kv("状态", st ? (st.running ? "● 运行中" : st.installed ? "○ 已安装 · 未运行" : "未安装") : "读取中…"),
-          st && st.installed ? kv("版本", st.version || "—") : null,
-          st && st.installed ? kv("占用", fmt(st.sizeBytes)) : null,
-          st && st.installed ? kv("目录", h("code", { className: "qbw-code" }, st.dir)) : null,
-          st && st.installing ? h(ProgressBar, { pct: st.installing.progress, phase: st.installing.phase, err: st.installing.error, indeterminate: /依赖|模型/.test(String(st.installing.phase || '')) && Number(st.installing.progress || 0) >= 99 }) : null,
-          h("div", { className: "qbw-actions" },
-            !st || !st.installed ? h(Btn, { disabled: busy === "install" || !form.source.trim(), onClick: async () => {
-              const r0 = await api("/pet/install", {
-                method: "POST",
-                body: {
-                  source: form.source.trim(),
-                  appDir: form.appDir.trim(),
-                  electronPath: form.electronPath.trim(),
-                },
-              }).catch((e) => ({ ok: false, error: e.message }));
-              if (r0 && r0.ok === false) { setErr(r0.error); return; }
-              setBusy("install");
-              for (let i = 0; i < 600; i += 1) {
-                await new Promise((r) => setTimeout(r, 1200));
-                const cur = await api("/pet/status").catch(() => null);
-                if (!cur) continue;
-                setSt(cur);
-                const job = cur.installing;
-                if (!job) break;
-                if (job.phase === "失败") { setErr(job.error || "安装失败"); break; }
-                if (job.phase === "完成") break;
-              }
-              setBusy("");
-              if (toast) toast("✓ 安装流程结束");
-              await read();
-            } }, busy === "install" ? "安装中…" : "安装") : null,
-            !st || !st.installed ? h("span", { style: { fontSize: "12px", opacity: 0.7 } }, form.source.trim() ? "" : "← 先在下方「安装设置」填安装包地址，按钮才可点") : null,
-            err ? h("div", { className: "qbw-err", style: { width: "100%", marginTop: "6px" } }, err) : null,
-            err ? h("div", { style: { display: "flex", gap: "8px", marginTop: "6px", flexWrap: "wrap" } },
-              h(Btn, { kind: "qbw-btn2", onClick: () => setForm((f) => ({ ...f, source: st?.defaults?.zipUrl || "https://github.com/Mieksido/surfpet/releases/latest/download/pet-pack.zip" })) }, "用官方最新版"),
-              h(Btn, { kind: "qbw-btn2", onClick: async () => {
-                setBusy("clean"); setErr("");
-                try {
-                  const r = await api("/pet/clean", { method: "POST", body: {} });
-                  if (r.ok === false) { setErr(r.error || "清理失败"); return; }
-                  if (toast) toast("✓ 已清理安装目录，可以重新安装");
-                  await read();
-                } catch (e) { setErr(e.message); } finally { setBusy(""); }
-              } }, busy === "clean" ? "清理中…" : "清理残留后重试")) : null,
-            st && st.installed && !st.running ? h(Btn, {
-              onClick: () => act("start", { electronPath: form.electronPath.trim() }),
-              disabled: !!busy,
-            }, "启动") : null,
-            st && st.installed && st.running ? h(Btn, { kind: "qbw-btn2", onClick: () => act("stop"), disabled: !!busy }, "停止") : null,
-            st && st.installed ? h(Btn, { kind: "qbw-btn2", onClick: () => act("remove"), disabled: !!busy }, "卸载") : null)),
-        h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-          h("h4", null, "安装设置"),
-          h("div", { className: "qbw-hint", style: { margin: "4px 0 8px" } }, "安装包：zip 的本地路径或 http(s) 链接；Electron：本机 electron.exe 的完整路径（安装包不带运行时）。"),
-          h("div", { className: "qbw-row" }, h("span", { className: "qbw-label" }, "安装包地址"),
-            h("input", { className: "qbw-input", value: form.source, placeholder: "D:/tools/pet-pack.zip 或 https://…", onChange: (e) => setForm((f) => ({ ...f, source: e.target.value })) }),
-            h(Browse, { mode: "file", title: "选择安装包 zip", onPick: (v) => setForm((f) => ({ ...f, source: v })) })),
-          h("div", { className: "qbw-row" }, h("span", { className: "qbw-label" }, "Electron 路径"),
-            h("input", { className: "qbw-input", value: form.electronPath, placeholder: "D:/tools/electron/electron.exe", onChange: (e) => setForm((f) => ({ ...f, electronPath: e.target.value })) }),
-            h(Browse, { mode: "file", title: "选择 electron.exe", onPick: (v) => setForm((f) => ({ ...f, electronPath: v })) })),
-          h("div", { className: "qbw-row" }, h("span", { className: "qbw-label" }, "安装目录（可选）"),
-            h("input", { className: "qbw-input", value: form.appDir, placeholder: "留空 = ~/.dsh/surfcore/pet/app", onChange: (e) => setForm((f) => ({ ...f, appDir: e.target.value })) }),
-            h(Browse, { mode: "dir", title: "选择桌宠安装目录", onPick: (v) => setForm((f) => ({ ...f, appDir: v })) })),
-          h("div", { className: "qbw-hint", style: { marginTop: "4px" } }, "沙箱 / 只读用户目录的环境里，把安装目录指到可写位置（例如工作区内）。"),
-          h("div", { className: "qbw-hint", style: { marginTop: "4px" } },
-            "Windows 请填**带盘符**的完整路径（例如 D:\dshwork\pet）；只写 /dshwork/pet 会被装到当前盘。"),
-          h("div", { className: "qbw-hint", style: { marginTop: "6px" } },
-            `官方最新包：${st?.defaults?.zipUrl || "https://github.com/Mieksido/surfpet/releases/latest/download/pet-pack.zip"}`),
-          h("div", { className: "qbw-actions" },
-            h(Btn, { kind: "qbw-btn2", onClick: () => setForm((f) => ({ ...f, source: st?.defaults?.zipUrl || "https://github.com/Mieksido/surfpet/releases/latest/download/pet-pack.zip" })) }, "用官方最新版"),
-            h(Btn, { kind: "qbw-btn2", disabled: busy === "electron-detect", onClick: () => act("electron-detect") }, busy === "electron-detect" ? "检测中…" : "检测 Electron"),
-            h(Btn, { kind: "qbw-btn2", disabled: busy === "electron-install", onClick: () => act("electron-install", { source: "auto" }) },
-              busy === "electron-install" ? "下载中…（约 125MB，2~5 分钟）" : `下载 Electron ${st?.defaults?.electronVersion || "45.0.0"}`),
-            h(Btn, { kind: "qbw-btn2", disabled: busy === "electron-install-gh", onClick: () => act("electron-install", { source: "github" }, "electron-install-gh") },
-              busy === "electron-install-gh" ? "从 GitHub 下载中…" : "GitHub 官方源"),
-            h(Btn, { kind: "qbw-btn2", disabled: busy === "config", onClick: () => act("config", form) }, busy === "config" ? "保存中…" : "保存设置")),
-          h("div", { className: "qbw-row" }, h("span", { className: "qbw-label" }, "下载链路"),
-            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
-              ...[
-                { id: "", label: "官方（GitHub）" },
-                { id: "https://gh-proxy.com", label: "镜像 · gh-proxy" },
-                { id: "https://ghproxy.net", label: "镜像 · ghproxy" },
-              ].map((opt) => h(Btn, {
-                key: opt.id || "official",
-                kind: (form.mirror || "") === opt.id ? "qbw-btn" : "qbw-btn2",
-                onClick: () => act("config", { ...form, mirror: opt.id }),
-              }, ((form.mirror || "") === opt.id ? "● " : "") + opt.label)))),
-          h("div", { className: "qbw-hint", style: { marginTop: "4px" } },
-            st?.electronDetected ? `已检测到 Electron：${st.electronDetected}` : "没检测到 Electron：点「下载 Electron」自动装到 ~/.dsh/surfcore/pet/runtime（约 125MB）")),
-        // ── 桌宠对话：人设 / 记忆 / 模型都来自当前角色，这里只管长短与开关 ──
-        h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-          h("h4", null, "对话",
-            h("span", { className: "qbw-badge " + (st?.proactive?.online ? "ok" : "warn") }, st?.proactive?.online ? "桌宠在线" : "桌宠离线"),
-            st?.proactive?.carrier === "pet" ? h("span", { className: "qbw-badge" }, "主动搭话载体") : null),
-          h("p", null, "在桌宠上右键「文本对话 / 语音对话」打开对话框；回复会用对应形式（文本或语音），气泡里始终显示文字。人设卡、记忆卡、目的状态跟 QQ / B站 共用当前角色。"),
-          h("div", { className: "qbw-hint" },
-            `角色：${st?.role?.name ?? "—"} · 模型：${st?.llm?.provider || "—"}/${st?.llm?.model || "—"} · 语音：${st?.voice?.enabled ? `${st.voice.route}（${st.voice.endpoint}）` : "未开启"} · 历史 ${st?.chat?.messages ?? 0} 条`),
-          h(Row, { label: "专注模式（不主动打扰）", hint: "开 = 不主动搭话、不弹主动气泡（QQ / 桌宠载体都停）；你自己打开对话仍然正常。桌宠右键菜单里也能切" },
-            h("input", {
-              className: "qbw-switch",
-              type: "checkbox",
-              checked: st?.focus?.enabled === true,
-              disabled: busy === "focus",
-              onChange: (e) => actFocus(e.target.checked),
-            })),
-          h(Row, { label: "启用桌宠对话", hint: "关掉后对话框不再回话；主动搭话也不走桌宠" },
-            h("input", { className: "qbw-switch", type: "checkbox", checked: chatCfg.enabled !== false, onChange: (e) => setChat("enabled", e.target.checked) })),
-          h(Row, { label: "把桌宠对话写进记忆卡", hint: "和 QQ / B站 同一张衰减记忆卡（同一套遗忘规则）；关掉就只留在聊天记录里" },
-            h("input", { className: "qbw-switch", type: "checkbox", checked: chatCfg.remember !== false, onChange: (e) => setChat("remember", e.target.checked) })),
-          h(Row, { label: "文本回复上限（字）", hint: "默认 300" },
-            h("input", { className: "qbw-input", type: "number", min: 40, max: 800, value: chatCfg.maxReplyChars ?? 300, onChange: (e) => setChat("maxReplyChars", Number(e.target.value) || 300) })),
-          h(Row, { label: "语音回复上限（字）", hint: "默认 120；太长会按句号截断" },
-            h("input", { className: "qbw-input", type: "number", min: 20, max: 300, value: chatCfg.voiceMaxChars ?? 120, onChange: (e) => setChat("voiceMaxChars", Number(e.target.value) || 120) })),
-          h(Row, { label: "带多少轮上下文", hint: "默认 20 轮；越大越贵" },
-            h("input", { className: "qbw-input", type: "number", min: 2, max: 60, value: chatCfg.historyTurns ?? 20, onChange: (e) => setChat("historyTurns", Number(e.target.value) || 20) })),
-          h(Row, { label: "思考强度", hint: "默认 low：桌宠闲聊要快；off 最省" },
-            h("select", { className: "qbw-select", value: chatCfg.reasoningEffort ?? "low", onChange: (e) => setChat("reasoningEffort", e.target.value) },
-              h("option", { value: "off" }, "off（不思考）"), h("option", { value: "low" }, "low（默认）"),
-              h("option", { value: "high" }, "high"), h("option", { value: "max" }, "max"))),
-          h("div", { className: "qbw-hint" }, "改完点底部「保存」即生效（不用重启桌宠）；用量计入 token 额度「其他」。"),
-          st?.proactive?.carrier !== "pet" ? h("div", { className: "qbw-hint" },
-            "「主动搭话」目前由 QQ 载体发出：在「目的」页可以把载体切成桌宠。") : null),
-        st && st.skins && st.skins.length ? h("div", { className: "qbw-card", style: { marginTop: "10px" } },
-          h("h4", null, "内置形象"),
-          h("div", { className: "qbw-chips" }, st.skins.map((x) => h("span", { className: "qbw-chip", key: x.id }, x.name))),
-          h("div", { className: "qbw-hint", style: { marginTop: "6px" } }, "在桌宠上右键「穿什么呢」切换。")) : null,
-        err ? h("div", { className: "qbw-err", style: { marginTop: "8px" } }, err) : null);
-    }
 
     // ── 主组件 ──────────────────────────────────────────────────────────────
     const TABS = [
@@ -5917,13 +4252,8 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
       ["characters", "角色"],
       ["purpose", "目的"],
       ["qq", "QQ"],
-      ["voice", "语音"],
-      ["pet", "桌宠"],
-      ["bili", "B站"],
       ["tokens", "Token 额度"],
-      ["watch", "观看历史"],
       ["memory", "记忆"],
-      ["align", "对齐"],
       ["extensions", "扩展"],
       ["advanced", "全部参数"],
       ["diag", "诊断"],
@@ -6116,23 +4446,16 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
       }
 
       const bridge = overview?.bridge ?? {};
-      const biliStatus = overview?.bili ?? {};
       const platformStart = overview?.platformStart ?? {};
       const qqStart = platformStart.qq !== false;
-      const biliStart = platformStart.bili !== false;
       const active = (id) => tab === id;
       const renderTab = () => {
         if (tab === "overview") return h(OverviewTab, { overview, reload, busy, setBusy, toast: notify, unified, setUnified: setUnifiedPath, goTab: setTab });
         if (tab === "characters") return h(CharactersTab, { overview, busy, setBusy, toast: notify, reload, goTab: setTab, unified, setUnified: setUnifiedPath });
         if (tab === "purpose") return h(PurposeTab, { qq, setQq: setQqPath, unified, setUnified: setUnifiedPath, overview, busy, setBusy, toast: notify, reload, goTab: setTab });
         if (tab === "qq") return h(QQTab, { cfg: qq, set: setQqPath, admin: unified?.admin ?? {}, setAdmin, unified, setUnified: setUnifiedPath, overview, busy, setBusy, toast: notify, reload, goTab: setTab, onSave: save });
-        if (tab === "bili") return h(BiliTab, { cfg: bili, set: setBiliPath, qq: normalizedQq, setQqPath, admin: unified?.admin ?? {}, setAdmin, unified, setUnified: setUnifiedPath, qqPrivate: normalizedQq?.allow?.private ?? [], qqAllowAll: normalizedQq?.allowAllWhenEmpty === true, overview, busy, setBusy, toast: notify, reload, onSave: save });
         if (tab === "tokens") return h(TokenTab, { budget, limits: limitDraft, onChange: setLimitDraft, disabled: !!busy, alertedToday: tokenAlerted, onSave: () => save(false), busy, toast: notify });
-        if (tab === "watch") return h(WatchTab, { busy, setBusy, toast: notify, goTab: setTab });
-        if (tab === "voice") return h(VoiceTab, { toast: notify });
-        if (tab === "pet") return h(PetTab, { toast: notify, unified, setUnified: setUnifiedPath });
         if (tab === "memory") return h(MemoryTab, { qq: normalizedQq, unified, setUnified: setUnifiedPath, overview, busy, setBusy, toast: notify, reload });
-        if (tab === "align") return h(AlignTab, { busy, setBusy, toast: notify, reload });
         if (tab === "extensions") return h(ExtensionsTab, { busy, setBusy, toast: notify, reload });
         if (tab === "advanced") return h(AdvancedTab, { qq: normalizedQq, bili, unified: normalizedUnified, setQqPath, setBiliPath, setUnifiedPath, busy });
         if (tab === "diag") return h(DiagnosticsTab, { busy, setBusy, toast: notify, reload });
@@ -6145,10 +4468,8 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           h("h3", { className: "qbw-title" }, "SurfCore",
             h("span", { className: "qbw-badge" }, `v${overview?.version ?? "—"}`),
             h("span", { className: "qbw-dots" },
-              h(StatusDot, { ok: qqStart && bridge.running && bridge.ok, warn: qqStart && bridge.running && !bridge.ok }, qqStart ? "QQ" : "QQ 关"),
-              h(StatusDot, { ok: biliStart && Boolean(biliStatus.available), warn: biliStart && Boolean(biliStatus.enabled) }, biliStart ? "B站" : "B站 关"),
-              h(StatusDot, { ok: biliStart && overview?.scheduler?.running }, biliStart ? "生物钟" : "生物钟关"))),
-          h("p", { className: "qbw-sub" }, "SurfCore 一个窗口管两边：QQ 的桥接与参数、B站养鱼参数、记忆卡、双向脱敏记忆、身份对齐，以及后续扩展接口。")),
+              h(StatusDot, { ok: qqStart && bridge.running && bridge.ok, warn: qqStart && bridge.running && !bridge.ok }, qqStart ? "QQ" : "QQ 关"))),
+          h("p", { className: "qbw-sub" }, "SurfCore：QQ 桥接与参数、记忆卡、双向脱敏记忆、身份对齐，以及扩展接口。")),
         h("div", { className: "qbw-tabs" }, TABS.map(([id, label]) => h("button", {
           key: id, className: "qbw-tab" + (active(id) ? " on" : ""), onClick: () => setTab(id),
         }, label))),
@@ -6211,8 +4532,6 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
     exports.inject = inject;
     exports.QQBIliWhaleSection = QQBIliWhaleSection;
     exports.QQ_FIELDS = QQ_FIELDS;
-    exports.BILI_FIELDS = BILI_FIELDS;
-    exports.QQ_BILI_SHARE_FIELDS = QQ_BILI_SHARE_FIELDS;
     // 仅供 Node 契约测试验证路径归一化；浏览器运行时不使用。
     exports.__test = { pathKeys, setPath };
     return module.exports;

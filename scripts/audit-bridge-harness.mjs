@@ -18,12 +18,9 @@ import * as slang from '../src/slang-learner.js';
 import * as sticker from '../src/sticker-lib.js';
 import * as modelPrices from '../src/model-prices.js';
 import * as tokenLedger from '../src/token-ledger.js';
-import * as voiceLib from '../src/send-voice-lib.js';
-import * as voiceDiagnostics from '../src/voice-diagnostics.js';
 import * as allowlist from '../src/allowlist.js';
 import * as callname from '../src/callname.js';
 import * as personaIdentity from '../src/persona-identity.js';
-import { synthesizeToFile } from '../src/voice-tts.js';
 import * as presetPrompt from '../src/preset-prompt.js';
 import * as fishGuard from '../src/fish-guard.js';
 import * as tokenGuard from '../src/token-guard.js';
@@ -222,8 +219,6 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     runPurpose, purposeState, notePurposeTurnEnded, notePurposeOutbound, startPurposeLoop, warmPurposeState,
     // 对话收尾判断：测试可直接调内部函数（不连真 QQ）。
     closeConversationV2, assessClosureV2, closureConfigV2, closureSuppressesWake, noteClosureReopenV2,
-    voiceCfg, voiceLibrary, resolveVoicePathForV2, resolveVoicePathForOperator, synthesizeVoiceText,
-    voiceBudgetCheck, sendVoiceV2, sendVoiceForV2, assertOutboundAuditOk,
     setMode(value) { currentMode = value; },
     setReady(value) { dshReady = value; },
     setPresets(value) { dshPresetIds = value; dshDefaultPreset = 'standard'; },
@@ -252,13 +247,11 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     probeDshBaseUrl: async () => true,
     discoverDshBaseUrl: async () => null,
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...selfIdentity, ...slang, ...sticker,
-    ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, ...fishGuard, ...tokenGuard,
-    ...voiceDiagnostics,
-    ...allowlist,
+    ...modelPrices, ...tokenLedger, ...stateAcl, ...presetPrompt, ...fishGuard, ...tokenGuard,
+        ...allowlist,
     ...callname,
     ...personaIdentity,
     ...dshHealth,
-    synthesizeToFile,
     ...tokenBudget,
     ...adminIdentity, ...roleCard, ...personaLayers, ...wakePolicy, ...groupPolicy, ...actionPlanner, ...sessionMap, ...contextTelemetry, ...memoryCard, ...biliCard, ...characterStore, ...historyCatchup,
     ...questionAnswers, ...ownerAudit, ...turnGuard, ...gateEvents,
