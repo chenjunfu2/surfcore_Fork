@@ -12531,13 +12531,13 @@ function buildWakePromptV2(key, reason, full = true) {
   // 每轮真正会变的只有：令牌（短，保留）、B站简报、表情匹配、此刻状态、
   // 唤醒配置、轻量记忆、参与度、鱼群保护提示。其余（记忆卡、额度规则）变化极慢，
   // 归入 fixedBlock，靠记忆卡整理/配置变更后的下一次 full 刷新。
-  // 记忆卡：full 时整块（首次/换会话/压缩后）；增量时只补「上次没发过的行」，
-  // 老记忆留在 DSH 上下文里。见 memoryCardDeltaBlock 的说明。
+  // 记忆卡：full 时整块（首次/换会话/压缩后）；增量时只补「新增/变化」的部分，
+  // 老记忆留在 DSH 上下文里。同一件事若被改写，新版本的行会再次出现，以最新为准。
   const memoryCardInc = full
     ? memoryCardLine
     : (() => {
       const delta = memoryCardDeltaBlock(st.memoryCardSent, memoryCardText);
-      return delta ? `【记忆卡 · 新增】\n${delta}\n\n` : '';
+      return delta ? `【记忆卡 · 新增&变化】\n（只列上次之后新增或有改动的条目；与上文冲突时以这里为准）\n${delta}\n\n` : '';
     })();
   const dynamicBlock = tokenLine + biliLine + stickerMatchLine + closureLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + memoryCardInc;
   const base = fixedBlock + dynamicBlock;
