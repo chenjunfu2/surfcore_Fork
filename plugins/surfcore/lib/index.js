@@ -2331,12 +2331,6 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { ${writeOut('$
     if (pathname === `${API_PREFIX}/persona/classify`) { await handlePersonaClassify(req, res); return; }
     if (pathname === `${API_PREFIX}/group-policy`) { await handleGroupPolicy(req, res); return; }
     if (pathname === `${API_PREFIX}/memory`) { await handleMemory(req, res, url); return; }
-    if (pathname === `${API_PREFIX}/watch-history`) { handleWatchHistory(res, url); return; }
-    if (pathname === `${API_PREFIX}/preferences/scan`) {
-      if (req.method !== 'GET') { json(res, 405, { ok: false, error: '只支持 GET' }); return; }
-      await handlePreferenceScan(res, url);
-      return;
-    }
     if (pathname === `${API_PREFIX}/fish-guard/qq`) { handleQqFishGuard(res); return; }
     if (pathname === `${API_PREFIX}/memory-card/full`) { await handleMemoryCardFull(req, res, url); return; }
     if (pathname === `${API_PREFIX}/memory-card`) { await handleMemoryCard(req, res); return; }
