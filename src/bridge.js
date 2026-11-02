@@ -27,6 +27,7 @@ import {
 } from './history-catchup.js';
 import { safeFetchBuffer, looksLikeImageBuffer } from './safe-fetch.js';
 import { discoverDshBaseUrl, isLoopbackBaseUrl, probeDshBaseUrl } from './dsh-port.js';
+import { discoverSnowLumaConnection, persistSnowLumaEndpoint, persistToken } from './snowluma-conn.js';
 import { hardenDir, manualDirCommand } from './state-acl.mjs';
 import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './forward.js';
 import { buildProvenanceBlock, buildSelfIdentityBlock, selfIdentityPath } from './self-identity.js';
@@ -65,7 +66,6 @@ import { evaluateWakeBudget, evaluateOutbound, localDayStart } from './token-gua
 import {
   blockMessage, evaluateBudget, localDayKey, readBudget, readDailyUsage,
 } from './token-budget.js';
-import { createBiliMemory } from './bili-memory.js';
 import {
   appendMemoryInboxEvent, looksNoteworthyMessage, resolveMemoryCardPaths,
 } from './memory-card.js';
@@ -81,9 +81,6 @@ import { planClose } from './action-planner.js';
 import { dedupeSessionMappings } from './session-map.js';
 import { checkProfileMcp, presetMismatch } from './dsh-health.js';
 import { createContextTelemetry } from './context-telemetry.js';
-import { createBiliDynamicsSync } from './bili-dynamics.js';
-import { createBiliShareScheduler } from './bili-share-scheduler.js';
-import { createBiliCardSender, normalizeCardMode } from './bili-card.js';
 import { fetchVideoInfo } from './bili-api.js';
 import {
   loadSlang,
@@ -1193,45 +1190,6 @@ function loadConfig() {
   // 定期主动私聊主人，分享所想（🧀）或提出索取。默认开，但受安静时段/每日上限/token 额度约束。
   cfg.purpose = normalizePurposeConfig(file.purpose, { ownerQQ: cfg.ownerQQ });
 
-  // B站记忆 / 动态同步 / 每日分享（config.json → biliBridge，全部可选，默认开启）。
-  {
-    const b = file.biliBridge && typeof file.biliBridge === 'object' && !Array.isArray(file.biliBridge) ? file.biliBridge : {};
-    const clampMs = (value, fallback, min, max) => {
-      const n = Number(value);
-      return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
-    };
-    const rawTimes = Array.isArray(b.share?.times) ? b.share.times : null;
-    const times = (rawTimes && rawTimes.length ? rawTimes : ['07:00', '11:00', '13:00', '15:00', '17:00', '19:00', '21:00', '23:00'])
-      .map((t) => {
-        const m = /^(\d{1,2}):(\d{2})$/.exec(String(t ?? '').trim());
-        if (!m) return '';
-        return `${String(Math.min(23, Number(m[1]))).padStart(2, '0')}:${String(Math.min(59, Number(m[2]))).padStart(2, '0')}`;
-      })
-      .filter(Boolean);
-    // 卡片样式：link（默认，普通分享卡）/ miniapp（B站小程序已下架，opt-in）/ off。
-    // 旧配置只有 card:boolean，normalizeCardMode 会把它收敛掉。
-    const shareCardMode = normalizeCardMode(b.share ?? {});
-    cfg.biliBridge = {
-      enabled: b.enabled !== false,
-      memory: {
-        enabled: b.memory?.enabled !== false,
-        refreshIntervalMs: clampMs(b.memory?.refreshIntervalMs, 10 * 60 * 1000, 60 * 1000, 60 * 60 * 1000)
-      },
-      dynamics: {
-        enabled: b.dynamics?.enabled !== false,
-        pollIntervalMs: clampMs(b.dynamics?.pollIntervalMs, 3 * 60 * 1000, 60 * 1000, 60 * 60 * 1000),
-        groups: normalizeIdList(b.dynamics?.groups)
-      },
-      share: {
-        enabled: b.share?.enabled !== false && times.length > 0,
-        times,
-        groups: normalizeIdList(b.share?.groups),
-        gapMs: clampMs(b.share?.gapMs, 4000, 0, 60_000),
-        cardMode: shareCardMode,
-        card: shareCardMode !== 'off'
-      }
-    };
-  }
 
   // DSH 每次重启可能换 Web 端口（GUI URL 是动态的）。DSH 启动的子进程会带
   // DSH_WEB_URL；优先用它，避免桥接还指着上一次的端口。手动从 Explorer 启动时
@@ -1789,11 +1747,18 @@ async function main() {
     }
   }
 
-  // B站那边的角色：把公开经历做成记忆，注入 QQ 提示词；动态与每日分享在启动时排定。
-  // 隐私：这个模块只读公开数据与公开见闻，不读任何私信文件。
-  const biliMemory = createBiliMemory({ stateDir: PLATFORM_STATE_DIR, log });
-  let biliDynamics = null;
-  let biliShare = null;
+  // 2026-11-02 slim 化：B站 子系统已整块移除，B站记忆不再注入 QQ 提示词。
+  // 这里保留同名空壳，让下游 `? biliMemory.xxx() : ''` 的调用点全部退化为空串，
+  // 不必逐处改动提示词拼装逻辑（降回归风险）。
+  const biliMemory = {
+    paths: {},
+    status: () => ({ enabled: false, available: false }),
+    briefBlock: () => '',
+    recallBlock: () => '',
+    refresh: async () => ({ ok: true, skipped: true }),
+    selfInfo: () => ({}),
+    selfName: () => '',
+  };
 
   // ── 群聊黑话/网络用语学习（slang） ──────────────────────────────────────
   let slangEntries = [];
@@ -3981,51 +3946,6 @@ async function main() {
             snowluma: snowlumaHealthSnapshot(),
             activity: readActivityTail(100)
           });
-          return;
-        }
-        // ── B站记忆 / 动态 / 分享（管理端只读状态 + 手动触发，供排查）─────────
-        if (req.method === 'GET' && url.pathname === '/api/bili/status') {
-          sendJson({
-            enabled: cfg.biliBridge?.enabled !== false,
-            memory: biliMemory.status(),
-            dynamics: biliDynamics?.status() ?? { enabled: false },
-            share: biliShare?.status() ?? { enabled: false },
-            groups: {
-              allow: cfg.allow?.groups ?? [],
-              dynamics: cfg.biliBridge?.dynamics?.groups ?? [],
-              share: cfg.biliBridge?.share?.groups ?? [],
-            },
-          });
-          return;
-        }
-        if (req.method === 'GET' && url.pathname === '/api/bili/prompt-preview') {
-          // 只读排查：看看群友提到「B站那个号」时，实际会注入什么。
-          const text = String(url.searchParams.get('text') ?? '').slice(0, 500);
-          const roleHint = currentRoleHint();
-          sendJson({
-            ok: true,
-            text,
-            briefChars: (biliMemory.briefBlock() ?? '').length,
-            recall: biliMemory.recallBlock(text),
-            roleHint,
-          });
-          return;
-        }
-        if (req.method === 'POST' && url.pathname === '/api/bili/memory/refresh') {
-          const stats = await biliMemory.refresh({ force: true });
-          sendJson({ ok: stats?.ok !== false, stats });
-          return;
-        }
-        if (req.method === 'POST' && url.pathname === '/api/bili/share-now') {
-          if (!biliShare) { sendJson({ ok: false, error: '分享调度未启用（检查 biliBridge.share / 白名单群）' }, 400); return; }
-          const result = await biliShare.fireNow();
-          sendJson({ ok: result?.ok !== false, result });
-          return;
-        }
-        if (req.method === 'POST' && url.pathname === '/api/bili/dynamics/poll') {
-          if (!biliDynamics) { sendJson({ ok: false, error: '动态同步未启用（检查 biliBridge.dynamics / 白名单群）' }, 400); return; }
-          const result = await biliDynamics.pollOnce();
-          sendJson({ ok: result?.ok !== false, result });
           return;
         }
         if (req.method === 'GET' && url.pathname === '/api/presets') {
@@ -8131,36 +8051,6 @@ async function main() {
     return body.data;
   }
 
-  // B站视频卡片：默认发 com.tencent.structmsg 新闻链接卡（普通分享卡，点开进 B站）。
-  // 为什么不再默认走小程序：QQ 侧 B站小程序（appid 1109937557）已下架，点卡片提示
-  // 「小程序已下架」，而 appid 写死在 SnowLuma 的 get_mini_app_ark 里，桥接改不了。
-  // `share.cardMode = 'miniapp'` 仍可手动切回（确认小程序恢复后再说）。
-  // 返回 true 表示至少有卡片发出去了，调用方就不用再让 AI 在正文里发链接。
-  const sendBiliCard = createBiliCardSender({
-    getShare: () => cfg.biliBridge?.share ?? {},
-    fetchVideoInfo,
-    // 仅 miniapp 模式会用到：调 SnowLuma 的小程序 ARK。
-    requestMiniArk: async ({ title, desc, picUrl, jumpUrl }) => {
-      const httpUrl = String(cfg.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-      const res = await fetch(`${httpUrl}/get_mini_app_ark`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(cfg.snowluma?.accessToken ? { authorization: `Bearer ${cfg.snowluma.accessToken}` } : {})
-        },
-        body: JSON.stringify({ type: 'bili', title, desc, picUrl, jumpUrl }),
-        signal: AbortSignal.timeout(20000)
-      });
-      const body = await res.json().catch(() => ({}));
-      const data = body?.data?.data;
-      if (body?.status !== 'ok' || body?.retcode !== 0 || !data?.app || !data?.meta) {
-        throw new Error(body?.wording || `get_mini_app_ark 返回异常（${body?.retcode ?? res.status}）`);
-      }
-      return data;
-    },
-    sendGroupSegments: (id, segments) => onebotSendSegments('group', id, segments),
-    log,
-  });
 
   // ── 图片/表情字节解析（供一代自动内联与二代按需工具） ────────────────────
   function mimeFromBuffer(buf) {
@@ -15011,50 +14901,6 @@ async function main() {
     return enabled;
   }
 
-  const biliGroupList = (list) => (Array.isArray(list) ? list : [])
-    .map((v) => String(v).trim())
-    .filter((v) => /^\d+$/.test(v));
-  if (cfg.biliBridge?.enabled) {
-    const shareGroups = biliGroupList(cfg.biliBridge.share.groups.length ? cfg.biliBridge.share.groups : cfg.allow.groups);
-    const dynamicsGroups = biliGroupList(cfg.biliBridge.dynamics.groups.length ? cfg.biliBridge.dynamics.groups : cfg.allow.groups);
-    if (cfg.biliBridge.memory.enabled) {
-      void biliMemory.refresh({ force: true });
-      const t = setInterval(() => { void biliMemory.refresh(); }, cfg.biliBridge.memory.refreshIntervalMs);
-      t.unref?.();
-    }
-    if (cfg.biliBridge.dynamics.enabled && dynamicsGroups.length) {
-      biliDynamics = createBiliDynamicsSync({
-        stateDir: PLATFORM_STATE_DIR,
-        log,
-        sendToQQ,
-        groups: dynamicsGroups,
-        isReady: () => snowlumaHealth.connected === true,
-        intervalMs: cfg.biliBridge.dynamics.pollIntervalMs,
-        selfName: biliMemory.selfName?.() ?? '',
-      });
-      biliDynamics.start();
-    } else if (cfg.biliBridge.dynamics.enabled) {
-      log('[B站动态] 没有白名单群，未启动');
-    }
-    if (cfg.biliBridge.share.enabled && shareGroups.length) {
-      biliShare = createBiliShareScheduler({
-        stateDir: PLATFORM_STATE_DIR,
-        log,
-        deliverPrompt,
-        groups: shareGroups,
-        memory: biliMemory,
-        isReady: () => dshReady,
-        times: cfg.biliBridge.share.times,
-        gapMs: cfg.biliBridge.share.gapMs,
-        getMode: () => currentMode,
-        sendCard: sendBiliCard,
-        isEnabled: () => cfg.biliBridge?.enabled !== false && biliStartEnabledByUnified(),
-      });
-      biliShare.start();
-    } else if (cfg.biliBridge.share.enabled) {
-      log('[B站分享] 没有白名单群，未启动');
-    }
-  }
 
   startDshWatch();
   startSnowlumaWatch();
