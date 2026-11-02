@@ -1067,7 +1067,7 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
         F("socialV2.proactive.idleThresholdMs", "空闲阈值（ms）", "", "number"),
         F("socialV2.proactive.probability", "主动概率", "", "number", { min: 0, max: 1, step: 0.01 }),
         F("socialV2.feedback.maxLength", "反馈最大字符", "", "number"),
-        F("socialV2.feedback.notifyOwnerOnError", "出错通知管理员", "", "switch"),
+        F("socialV2.feedback.notifyOwnerOnError", "反馈时私聊通知管理员", "默认开；AI 调 qq_report_feedback 上报时，用 QQ 私聊发一份给 owner（短报告贴全文，长报告给预览 + state/feedback.json 路径）。不限 level：info 级的死锁/卡住同样送达", "switch"),
         F("socialV2.media.maxBytes", "图片单条最大字节", "", "number"),
         F("socialV2.media.maxPixels", "单张最大像素", "", "number"),
         F("socialV2.media.maxCount", "单条最多图片", "", "number", { min: 1 }),

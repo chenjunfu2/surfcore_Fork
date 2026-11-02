@@ -1003,7 +1003,10 @@ function loadConfig() {
       },
       feedback: {
         maxLength: 500,
-        notifyOwnerOnError: false
+        // AI 调 qq_report_feedback 时是否私聊通知 owner。默认开：AI 往往是
+        // 「被卡住/说不出话」才走 feedback，默认隐藏等于让问题石沉大海。
+        // 字段名沿用历史的 notifyOwnerOnError（配置兼容），但已不再只针对 error 级。
+        notifyOwnerOnError: true
       },
       context: {
         recentLimit: 100,
@@ -7037,8 +7040,27 @@ function retireSession(key) {
           appendFeedbackEntry({ id: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), key, level, message, time: new Date().toISOString() });
           log(`[reserved2] AI 反馈 (${key}) [${level}]: ${message.slice(0, 80)}`);
           appendActivity(`${key} [reserved2] AI 反馈 [${level}]：${message.slice(0, 80)}`);
-          if (cfg.socialV2?.feedback?.notifyOwnerOnError && level === 'error' && cfg.ownerQQ) {
-            log(`[reserved2] 错误级反馈，可通知 owner ${cfg.ownerQQ}（当前仅记录日志）`);
+          if (cfg.socialV2?.feedback?.notifyOwnerOnError && cfg.ownerQQ) {
+            // 2026-11-02：这个开关以前只打一句日志（「当前仅记录日志」），AI 调
+            // qq_report_feedback 上报的问题管理员根本收不到。典型场景：AI 被限频/死锁
+            // 卡住、说不出话，只能后台 feedback —— 结果就是没人知道。
+            //
+            // 现在真正发一条 QQ 私聊给 owner：
+            // - 短报告直接贴全文；长报告给开头预览 + 落盘路径（全文在 state/feedback.json）。
+            // - 不再限制 level === 'error'：level 只是标签，info 级的死锁报告同样需要送达。
+            // - 不判断「是否等于当前会话」：AI 失败时往往根本没在聊天里说出来，
+            //   漏发等于没通知。防回环是安全的：sendToQQ 发出的消息入库时 isSelf=true，
+            //   所有唤醒判定都用 `!m.isSelf` 过滤，不会被当成新消息再次唤醒 AI。
+            const ownerKey = `private:${cfg.ownerQQ}`;
+            const previewMax = 180;
+            const body = message.length <= previewMax
+              ? message
+              : `${message.slice(0, previewMax)}…\n\n（全文 ${message.length} 字，见 state/feedback.json）`;
+            // sendToQQ 内部会做脱敏、分条与发送守卫；失败只记日志，绝不影响反馈落盘。
+            void Promise.resolve()
+              .then(() => sendToQQ(ownerKey, `📋 AI 反馈 [${level}]\n${body}`))
+              .catch((error) => log(`[reserved2] 反馈通知 owner 失败：${error?.message ?? error}`));
+            log(`[reserved2] AI 反馈已通知 owner ${cfg.ownerQQ}（${level}，${message.length} 字）`);
           }
           sendJson({ ok: true, key, level, message });
           return;
