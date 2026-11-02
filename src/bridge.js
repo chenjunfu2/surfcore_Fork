@@ -2901,7 +2901,51 @@ async function main() {
     markReadCalledKeys.delete(key);
   }
 
-  function retireSession(key) {
+  /**
+ * 这次唤醒是否需要重新注入「固定不变的系统提示词」（人设/协议/管理员规则等）。
+ *
+ * 2026-11-02 用户要求：不要每次唤醒都重复一大段不变内容，但三种情况必须重发：
+ *   1) 从未发过（bootstrapSent=false）；
+ *   2) DSH 会话换了（sessionId 变了 —— DSH 重启导致会话丢失、/reset、退役后重建）；
+ *   3) 上下文被压缩（compaction/end 成功 → 旧内容被 shadow，由 onCompactionEnd 清标志）。
+ *
+ * 桥接/QQ 后端重启但 DSH 会话没变时，sessionId 一致 ⇒ 不重发，这正是用户要的增量。
+ */
+function bootstrapNeeded(key, sessionId, st = null) {
+  const s = st ?? socialV2.conversations.get(key);
+  if (!s) return true;
+  if (!s.bootstrapSent) return true;
+  if (!sessionId) return true;
+  return String(s.bootstrapSessionId || '') !== String(sessionId);
+}
+
+/** 标记「已在本条 DSH 会话上注入过系统提示词」。 */
+function markBootstrapSent(key, sessionId) {
+  const st = socialV2.conversations.get(key);
+  if (!st) return;
+  st.bootstrapSent = true;
+  st.bootstrapSessionId = String(sessionId || '');
+}
+
+/**
+ * 上下文压缩成功后，旧上下文已被 shadow，固定提示词需要补发一次。
+ * 只认 compaction/end 且没有 error；compaction/prune（工具结果剪枝）不算，
+ * 否则会频繁重发。见 asar 里的 SessionEventMap 类型定义。
+ */
+function onCompactionEnd(sessionId, event) {
+  if (event?.data?.error) return;
+  const key = reverse.get(sessionId);
+  if (!key) return;
+  const st = socialV2.conversations.get(key);
+  if (!st) return;
+  if (!st.bootstrapSent) return;
+  st.bootstrapSent = false;
+  st.bootstrapSessionId = '';
+  saveSocialV2State();
+  log(`[bootstrap] ${key} 上下文已压缩（${event?.data?.turn === null ? '手动' : '自动'}），下次唤醒重发系统提示词`);
+}
+
+function retireSession(key) {
     const sessionId = state.sessions[key];
     delete state.sessions[key];
     delete state.sessionPolicies[key];
@@ -5741,8 +5785,10 @@ async function main() {
           // 第一次唤醒必须走 bootstrap：那条 prompt 里带着「二代协议说明 + 操作者为这个会话
           // 预写的初始提示词（群环境/氛围）」。若用手动唤醒的 admin 文案顶掉它，这个会话就
           // 永远拿不到引导 —— 而 bootstrapSent 一旦置真，后续再也不会补发。
-          const firstWake = !st.bootstrapSent;
-          if (firstWake) st.bootstrapSent = true;
+          // 2026-11-02：判定改用 sessionId（见 bootstrapNeeded），桥接/QQ 重启但 DSH
+          // 会话未变时不重发；DSH 会话丢失或上下文压缩后才重发。
+          const existingSid = state.sessions[key] || '';
+          const firstWake = bootstrapNeeded(key, existingSid, st);
           const effectiveReason = firstWake ? 'bootstrap' : reason;
           saveSocialV2State();
           // 和其它唤醒入口保持一致：sendWakePromptV2 是异步的，这里不 await（不能让 HTTP 回复
@@ -8943,6 +8989,8 @@ async function main() {
         lastActionAt: 0,
         agentToken: crypto.randomBytes(16).toString('hex'),
         bootstrapSent: false,
+        // 上一次 bootstrap 时绑定的 DSH sessionId（见 markBootstrapSent 的说明）。
+        bootstrapSessionId: '',
         wakeTimes: [],
         sendTimes: [],
         stickerCollectTimes: [],
@@ -9021,6 +9069,7 @@ async function main() {
             lastActionAt: Number(val.lastActionAt) || 0,
             agentToken,
             bootstrapSent: !!val.bootstrapSent,
+        bootstrapSessionId: String(val.bootstrapSessionId ?? ''),
             wakeTimes: Array.isArray(val.wakeTimes) ? val.wakeTimes : [],
             sendTimes: Array.isArray(val.sendTimes) ? val.sendTimes : [],
             stickerCollectTimes: Array.isArray(val.stickerCollectTimes) ? val.stickerCollectTimes : [],
@@ -9146,6 +9195,7 @@ async function main() {
           lastActionAt: st.lastActionAt,
           agentToken: st.agentToken,
           bootstrapSent: st.bootstrapSent,
+        bootstrapSessionId: st.bootstrapSessionId || '',
           wakeTimes: st.wakeTimes.slice(-200),
           sendTimes: st.sendTimes.slice(-500),
           stickerCollectTimes: Array.isArray(st.stickerCollectTimes) ? st.stickerCollectTimes.slice(-500) : [],
@@ -10838,7 +10888,9 @@ async function main() {
       // offline queue may have received more messages since this wake was queued.
       wakeState = getSocialV2State(key);
       wakeToken = wakeState.agentToken;
-      promptText = buildWakePromptV2(key, opts.wakeReason);
+      // 固定提示词块只在需要时注入（首次/换会话/压缩后），其余唤醒只发变化段。
+      const needFullNow = bootstrapNeeded(key, sessionId, wakeState);
+      promptText = buildWakePromptV2(key, opts.wakeReason, needFullNow);
       wakeSnapshot = buildWakeSnapshotV2(key);
       if (wakeSnapshot) {
         promptText += `\n\n【本次消息快照】\n${JSON.stringify(wakeSnapshot)}\n以上消息已提供，无需重复查询；partial=true 时用 qq_get_context_snapshot(afterSeq=readThroughSeq, include=["unread"]) 继续读取。先处理当前消息；回复前如需确认后续补充，用 qq_wait_for_messages(purpose="reply") 补足短静默，已安静够久会立即返回，不要先长等。收尾只确认你已处理的 readThroughSeq（本地 seq，非 QQ messageId），传给 qq_mark_read 或 qq_set_wake_config 的 throughSeq；新到消息留待处理。`;
@@ -10905,6 +10957,9 @@ async function main() {
       if (!opts.silent) await sendToQQ(key, `⚠️ 消息未被接受：${safeErrText}`);
       return { ok: false, error: safeErrText };
     }
+    // 投递成功 = 固定提示词块（如果这轮带了）已经进了这条 DSH 会话的上下文。
+    // 记下 sessionId，下次同一条会话就只发变化段；会话换了或压缩后才重发。
+    if (opts.wakeReason) markBootstrapSent(key, sessionId);
     if (wakeSnapshot && isCurrentSession(key, sessionId)
         && socialV2.conversations.get(canonicalV2Key(key)) === wakeState
         && wakeState.agentToken === wakeToken) {
@@ -12301,7 +12356,13 @@ async function main() {
     }
   }
 
-  function buildWakePromptV2(key, reason) {
+  /**
+ * @param {boolean} [full] 是否注入「固定不变的系统提示词块」（人设/协议/管理员规则/
+ *   反AI味/积极性/沉睡前等待/首回复节奏）。默认 true。
+ *   调用方用 bootstrapNeeded() 判定：只有首次接入、DSH 会话换了、或上下文被压缩后
+ *   才传 true；其余唤醒传 false，只发「每轮都在变」的部分，省上下文。
+ */
+function buildWakePromptV2(key, reason, full = true) {
     const roleState = readRoleState();
     const roleLine = roleState.role ? `【当前角色】${roleState.role}（完整角色卡请调用 qq_get_prompt 查看）\n\n` : '';
     // B站 记忆简报关掉时（biliBridge.memory.enabled=false），B站 侧的自我锚点会整段消失；
@@ -12398,7 +12459,15 @@ async function main() {
     // 二代不自动注入完整角色卡，但记忆卡必须每轮都在：否则她记不起和主人的事。
     const memoryCardText = memoryCardPromptBlock();
     const memoryCardLine = memoryCardText ? `${memoryCardText}\n\n` : '';
-    const base = roleLine + identityLine + provenanceLine + adminLine + biliLine + memoryCardLine + tokenLine + initialPromptLine + antiAiLine + proactiveLine + closureLine + stickerLine + stickerMatchLine + replyLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + tokenGuardLine + preSleepLine;
+    // 固定不变的系统提示词块：只在「首次接入 / DSH 会话换了 / 上下文被压缩」时注入。
+  // 这几段内容不随对话变化，每轮重发纯属浪费上下文。
+  const fixedBlock = full
+    ? roleLine + identityLine + provenanceLine + adminLine + antiAiLine + proactiveLine + replyLine + preSleepLine + initialPromptLine
+    : '';
+  // 每轮都要在的部分：令牌会轮换、状态/记忆/参与度/收尾/表情/鱼群/额度都在变，
+  // 记忆卡内容也会随整理变化，所以始终注入。
+  const dynamicBlock = tokenLine + biliLine + memoryCardLine + closureLine + stickerLine + stickerMatchLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + tokenGuardLine;
+  const base = fixedBlock + dynamicBlock;
     lastWakePromptMeta = {
       role: roleLine.length,
       identity: identityLine.length,
@@ -12595,7 +12664,10 @@ async function main() {
     st.wakeConfig.wakeCount = (st.wakeConfig.wakeCount || 0) + 1;
     st.lastWakeReason = reason;
     saveSocialV2State();
-    const promptText = buildWakePromptV2(key, reason);
+    // 与 deliverPromptNow 一致：只有首次/换会话/压缩后才带完整固定块。
+    const sidForBootstrap = state.sessions[key] || '';
+    const needFull = bootstrapNeeded(key, sidForBootstrap, st);
+    const promptText = buildWakePromptV2(key, reason, needFull);
     log(`[reserved2] 唤醒 ${key}（${reason}）`);
     const rollbackWakeTime = () => {
       const idx = st.wakeTimes.lastIndexOf(wakeTime);
@@ -13551,8 +13623,8 @@ async function main() {
         plain: plainContent, text: textContent,
         quoteSelf: quoteTargetIsSelf, directAddress: directed, media: mediaList,
       });
-      if (!st.bootstrapSent) {
-        st.bootstrapSent = true;
+      if (bootstrapNeeded(key, state.sessions[key] || '', st)) {
+        // 不在这里置 bootstrapSent：真正发出去时由 sendWakePromptV2 落 sessionId。
         saveSocialV2State();
         scheduleWakeV2(key, 'bootstrap');
       } else {
@@ -13978,8 +14050,7 @@ async function main() {
     if (currentMode !== 'reserved2') return;
     if (socialV2.paused) return;
     const st = getSocialV2State(key);
-    if (!st.bootstrapSent) {
-      st.bootstrapSent = true;
+    if (bootstrapNeeded(key, state.sessions[key] || '', st)) {
       saveSocialV2State();
       scheduleWakeV2(key, 'bootstrap');
     } else if (st.wakeConfig?.triggers?.poke) {
@@ -14156,6 +14227,13 @@ async function main() {
             // Token 记账放在最前面：无论会话是否仍属当前模式/是否学习会话，
             // 花掉的钱都是真的，都必须入账（归属由 resolveKey 决定）。
             recordSessionUsage(frame.sessionId, frame.event);
+        // 上下文压缩成功 → 旧的固定提示词已被 shadow，下次唤醒要补发一次。
+        // 只认 compaction/end 且无 error；compaction/prune（工具结果剪枝）按用户要求不算。
+        if (frame.event?.type === 'compaction/end') {
+          try { onCompactionEnd(frame.sessionId, frame.event); } catch (error) {
+            log('[bootstrap] 处理压缩事件失败：', error?.message ?? error);
+          }
+        }
             const key = reverse.get(frame.sessionId);
             if (key) {
               try {
