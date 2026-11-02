@@ -649,18 +649,18 @@ await test('a displayed page extends the watermark across an eviction gap it can
   assert.deepEqual(seqs(st.unread), [5, 6]);
 });
 
-await test('message detail reports truncation instead of passing a preview off as the full text', async ({ h, st, request, append }) => {
+await test('message detail returns the full body instead of a 200-char preview', async ({ h, st, request, append }) => {
   append('短消息');
   const short = await request('message-detail', { query: '&messageId=1' });
   assert.equal(short.status, 200);
   assert.equal(short.data.info.textTruncated, false, 'a short message is not truncated');
-  // Bridge storage keeps a 200-character head/tail preview; the detail view shows the
-  // same preview and must say so rather than implying it holds the whole message.
+  // 2026-11-02: 入库改为保留原文（INGEST_TEXT_MAX），所以 detail 是「读全文」的入口，
+  // 400 字的消息应该原样返回、不被截断。截断只在超过 DETAIL_TEXT_MAX 时才发生。
   append('长'.repeat(400));
   const long = await request('message-detail', { query: '&messageId=2' });
   assert.equal(long.status, 200);
-  assert.equal(long.data.info.text.length, 200);
-  assert.equal(long.data.info.textTruncated, true, 'a capped preview must be reported as truncated');
+  assert.equal(long.data.info.text.length, 400, 'detail returns the full body within the ingest cap');
+  assert.equal(long.data.info.textTruncated, false, 'a body within the cap is not truncated');
 });
 
 console.log(`\nToken economy bridge regressions: ${tests - failures}/${tests} passed.`);

@@ -917,7 +917,7 @@ server.tool(
 
 server.tool(
   'qq_get_message_detail',
-  '按 message_id / 本地 seq 查看单条消息的发送者、引用信息与正文（只读）。注意：正文最多返回 200 字符，textTruncated=true 表示被截断，这里不是读取长消息全文的入口。',
+  '按 message_id / 本地 seq 查看单条消息的发送者、引用信息与正文（只读）。快照/读消息里的正文默认只给约 200 字预览；这里能拿到最长 5000 字正文，是读取长消息全文的入口。textTruncated=true 表示连这里的上限也超了。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),

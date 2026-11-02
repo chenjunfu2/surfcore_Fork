@@ -2580,7 +2580,15 @@ async function main() {
     log: (...args) => log(...args),
   });
   let telemetryWakeSeq = 0;
-  let lastWakePromptMeta = null;
+  // 消息「入库」上限：进状态（unread / recentMessages）时保留的原文长度。
+// 这不是给模型看的长度——注入时仍按 snapshot.textChars（默认 200）截断，
+// 只有模型主动调 qq_get_message_detail 才会拿到这里保留的全文。
+// 5000 覆盖 QQ 单条消息的实际上限，避免长消息（长段条件/完整叙述/步骤）一进来就被砍。
+const INGEST_TEXT_MAX = 5000;
+// qq_get_message_detail 返回正文的上限，与入库上限保持一致。
+const DETAIL_TEXT_MAX = 5000;
+
+let lastWakePromptMeta = null;
   const sessionWakeIds = new Map();
   const sessionCharacterIds = new Map();
 
@@ -7051,7 +7059,7 @@ function retireSession(key) {
             if (found && found.messageId && String(found.messageId) !== messageId) {
               info = {
                 sender: String(found.sender || ''),
-                text: String(found.text || found.plain || '').slice(0, 200),
+                text: String(found.text || found.plain || '').slice(0, DETAIL_TEXT_MAX),
                 userId: found.userId ? String(found.userId) : null,
                 messageId: String(found.messageId),
                 seq: found.seq
@@ -7061,7 +7069,7 @@ function retireSession(key) {
               if (!info && found) {
                 info = {
                   sender: String(found.sender || ''),
-                  text: String(found.text || found.plain || '').slice(0, 200),
+                  text: String(found.text || found.plain || '').slice(0, DETAIL_TEXT_MAX),
                   userId: found.userId ? String(found.userId) : null,
                   messageId: found.messageId ? String(found.messageId) : null,
                   seq: found.seq
@@ -7070,8 +7078,13 @@ function retireSession(key) {
             }
             // 无论 info 来自本地还是 OneBot，只要本地有 found 就补充转发字段，避免提示词与实现不一致。
             if (info && found) Object.assign(info, forwardFields);
-            // 正文本就是 200 字符预览；显式告知截断，避免模型把预览当成全文。
-            if (info) info.textTruncated = String(info.text ?? '').length >= 200;
+            // 显式告知是否截断，避免模型把预览当成全文。
+            // 用「严格大于上限」判断：恰好等于上限的完整消息不应被判为截断。
+            // resolveReplyInfo 已带 textTruncated 时以它为准（那里能拿到真实原文长度）。
+            if (info && info.textTruncated === undefined) {
+                const localText = String(info.text ?? '');
+                info.textTruncated = localText.length > DETAIL_TEXT_MAX;
+            }
             sendJson({ ok: true, key, messageId, info });
           } catch (error) {
             sendJson({ ok: false, error: `获取消息详情失败：${error?.message ?? error}` }, 500);
@@ -10104,8 +10117,9 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
     const arr = social.recentMessages.get(key);
     arr.push({
       sender,
-      text: truncateText(String(textContent), 200),
-      plain: truncateText(String(plainText ?? textContent), 200),
+      // 入库保留原文（注入时再按 snapshot.textChars 截断），见 INGEST_TEXT_MAX。
+      text: truncateText(String(textContent), INGEST_TEXT_MAX),
+      plain: truncateText(String(plainText ?? textContent), INGEST_TEXT_MAX),
       quoteTargetIsSelf: !!quoteTargetIsSelf,
       isOwner: !!isOwner,
       media: Array.isArray(media) ? media : [],
@@ -10122,7 +10136,7 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
       social.pendingSummaries.set(key, { items: [], since: Date.now() });
     }
     const entry = social.pendingSummaries.get(key);
-    entry.items.push({ sender, text: truncateText(String(textContent), 200), plain: truncateText(String(plainText ?? textContent), 200), isOwner: !!isOwner, media: Array.isArray(media) ? media : [], messageId: messageRef ? String(messageRef) : '', hasMedia: Array.isArray(media) && media.length > 0, time: Date.now() });
+    entry.items.push({ sender, text: truncateText(String(textContent), INGEST_TEXT_MAX), plain: truncateText(String(plainText ?? textContent), INGEST_TEXT_MAX), isOwner: !!isOwner, media: Array.isArray(media) ? media : [], messageId: messageRef ? String(messageRef) : '', hasMedia: Array.isArray(media) && media.length > 0, time: Date.now() });
     if (entry.items.length > 60) entry.items.shift();
   }
 
@@ -11806,9 +11820,13 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
         includeReply: false
       });
       const senderUserId = raw.sender?.user_id ?? raw.user_id ?? null;
+      const fullText = String(text ?? '');
       const info = {
         sender: String(sender ?? ''),
-        text: String(text ?? '').slice(0, 200),
+        // qq_get_message_detail 是「读全文」的入口，上限放到 DETAIL_TEXT_MAX，
+        // 与入库上限一致，覆盖 QQ 单条消息的实际长度。
+        text: fullText.slice(0, DETAIL_TEXT_MAX),
+        textTruncated: fullText.length > DETAIL_TEXT_MAX,
         userId: senderUserId != null ? String(senderUserId) : null
       };
       replyInfoCache.set(cacheKey, { info, ts: Date.now() });
@@ -11832,7 +11850,7 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
       return {
         info: realInfo || {
           sender: String(found.sender || ''),
-          text: String(found.text || found.plain || '').slice(0, 200),
+          text: String(found.text || found.plain || '').slice(0, DETAIL_TEXT_MAX),
           userId: null,
           messageId: realId,
           seq: found.seq
@@ -11848,7 +11866,7 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
       return {
         info: realInfo || {
           sender: String(found.sender || ''),
-          text: String(found.text || found.plain || '').slice(0, 200),
+          text: String(found.text || found.plain || '').slice(0, DETAIL_TEXT_MAX),
           userId: null,
           messageId: realId,
           seq: found.seq
@@ -11914,8 +11932,9 @@ function closurePromptLineV2(key, st, dynamicOnly = false) {
       messageId: messageId != null ? String(messageId) : null,
       sender,
       userId: userId != null ? String(userId) : null,
-      text: truncateText(String(textContent), 200),
-      plain: truncateText(String(plainContent ?? textContent), 200),
+      // 入库保留原文（注入时按 snapshot.textChars 截断），见 INGEST_TEXT_MAX。
+      text: truncateText(String(textContent), INGEST_TEXT_MAX),
+      plain: truncateText(String(plainContent ?? textContent), INGEST_TEXT_MAX),
       tail: truncateTextTail(String(plainContent ?? textContent), 200),
       quoteTargetIsSelf: !!quoteTargetIsSelf,
       isOwner: !!isOwner,
@@ -13087,8 +13106,9 @@ function buildWakePromptV2(key, reason, full = true) {
       time,
       userId: senderId || null,
       sender,
-      text: truncateText(text || '[消息]', 200),
-      plain: truncateText(plain || text || '[消息]', 200),
+      // 历史补读同样入库保留原文（注入时再截断）。
+      text: truncateText(text || '[消息]', INGEST_TEXT_MAX),
+      plain: truncateText(plain || text || '[消息]', INGEST_TEXT_MAX),
       tail: truncateTextTail(plain || text || '', 200),
       isSelf,
       isOwner,
