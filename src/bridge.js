@@ -8273,6 +8273,14 @@ function retireSession(key) {
 
   // OneBot 图片 file 字段只应接受简单缓存文件名；拒绝路径、URL、盘符、协议前缀等，
   // 防止把任意本地路径/内网 URL 交给网关 get_image 造成 SSRF/任意文件读取。
+  //
+  // 2026-11-02 修：原白名单 `^[\w.+=@-]+$` 把 QQ 大量真实文件名误杀——
+  // 实测 `QE6)I2UP`9D]MT)_8NY6EOR.png`、`QC%_)I(9%A3[RGNMW%_3E3.png`、
+  // `{B649B5BA-853C-6AA0-FFFC-9F63D7EDE789}.jpg` 都含 ( ) [ ] { } % ` 等字符，
+  // 于是 get_image 被拒、只剩 URL 兜底；URL 一旦取不到就整张图丢失
+  // （表现为模型收到一个空 image 块，说「只拿到空白壳子」）。
+  // 危险形态（路径分隔符、..、盘符、协议前缀）上面已逐条拦死，
+  // 这里放宽到「可打印 ASCII」即可，既覆盖 QQ 真实文件名，也不放行控制字符。
   function isProbablySafeImageFileRef(file) {
     const s = String(file ?? '').trim();
     if (!s || s.length > 512) return false;
@@ -8281,7 +8289,9 @@ function retireSession(key) {
     if (/^[a-zA-Z]:/.test(s)) return false;
     if (/^(file|https?|base64|data):/i.test(s)) return false;
     if (s.includes('..')) return false;
-    return /^[\w.+=@-]+$/.test(s);
+    // 只接受可打印 ASCII（0x20-0x7e）：QQ 的缓存文件名常含 ( ) [ ] { } % ` 等符号，
+    // 这些都不构成路径注入风险（分隔符/盘符/协议已在上面拦掉），必须放行。
+    return /^[\x20-\x7e]+$/.test(s);
   }
 
   // QQ 表情包 CDN 的地址可以只靠 emoji_id 推出来（实测形态：
