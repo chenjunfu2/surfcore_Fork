@@ -4266,6 +4266,9 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           if (r.qq) setQq(r.qq);
           if (r.bili) setBili(r.bili);
           if (r.unified) setUnified(r.unified);
+          // 保存成功后把版本戳刷成服务端刚写盘的新值，否则下一次保存会拿旧戳
+          // 撞上自己的乐观并发检查 → 409 CONFIG_STALE（2026-11-02 用户反馈）。
+          if (r.stamps) setConfigStamps(r.stamps);
           const nextSaved = JSON.stringify({ qq: r.qq ?? normalizedQq, bili: r.bili ?? bili, unified: r.unified ?? normalizedUnified });
           setSaved(nextSaved);
           notify(`✓ 已保存${budgetDirty ? "（token 额度即时生效）" : ""}${r.bridge ? (r.bridge.ok ? "，桥接已重启" : "，桥接重启失败") : ""}${r.warnings?.length ? "（有提示）" : ""}`);

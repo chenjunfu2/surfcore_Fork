@@ -787,6 +787,13 @@ export function apply(ctx) {
         if (!restart.ok) result.warnings.push(`桥接重启失败：${restart.error ?? restart.message ?? '未知'}`);
       }
     }
+    // 保存成功后必须回传**新的**版本戳：否则前端仍持着保存前的旧戳，
+    // 下一次保存会被自己的乐观并发检查判成「配置已被别处修改」而 409。
+    // 现象：第一次保存成功，再次修改就报 CONFIG_STALE（2026-11-02 用户反馈）。
+    result.stamps = {
+      qq: fileStamp(QQ_CONFIG),
+      unified: fileStamp(path.join(STATE_DIR, 'config.json')),
+    };
     json(res, 200, result);
   }
 
