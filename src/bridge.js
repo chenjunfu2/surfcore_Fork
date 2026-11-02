@@ -6692,6 +6692,22 @@ function retireSession(key) {
             // 只拦「长轮询」型等待；短等待（<5s，测试/探针常用）不参与计数，
             // 否则会把「等待中权限被撤销」这类用例的 403 语义挡掉。
             if (timeoutMs >= 5000 && count >= WAIT_STREAK_LIMIT) {
+              // 死锁修复（2026-11-02）：这里以前直接返回 shouldSleep:true 让 AI 去收尾，
+              // 但 preSleepWaitSatisfiedAt 仍是 0，set_wake_config / qq_mark_read 会被
+              // preSleepWaitBlockedV2 再拦一次（要求 5 分钟安静），而 wait 又被本分支拦住，
+              // 三方互锁：AI 只能干等 5 分钟，或放弃收尾直接结束回合。
+              //
+              // 语义澄清：连续等满 WAIT_STREAK_LIMIT 次本身就说明「确实在等、且反复被新消息打断」，
+              // 这已是充分的睡前观察，应当直接放行收尾，而不是要求再看一次表。
+              // purpose=reply 的短静默等待不属于睡前观察，不标记。
+              let preSleepReleased = false;
+              if (!replyWait) {
+                st.preSleepWaitSatisfiedAt = Date.now();
+                st.preSleepWaitObservedAt = 0;
+                st.preSleepWaitAccumMs = 0;
+                try { saveSocialV2State(); } catch {}
+                preSleepReleased = true;
+              }
               sendJson({
                 ok: true,
                 key,
@@ -6702,8 +6718,16 @@ function retireSession(key) {
                 waitedMs: 0,
                 stopped: true,
                 reason: 'consecutive-wait-limit',
-                message: `本回合已经连续等待 ${WAIT_STREAK_LIMIT} 次，不要再调用 qq_wait_for_messages；请设置下一次唤醒（或结束本回合）。`,
-                shouldSleep: true,
+                message: preSleepReleased
+                  ? `本回合已经连续等待 ${WAIT_STREAK_LIMIT} 次，不要再调用 qq_wait_for_messages。已视为完成沉睡前观察：现在可以直接调用 qq_set_wake_config 设置下一次唤醒，或用 qq_mark_read / qq_close_conversation 收尾。`
+                  : `本回合已经连续等待 ${WAIT_STREAK_LIMIT} 次，不要再调用 qq_wait_for_messages；请结束本回合。`,
+                // C：只有真的放行了睡前观察才说「可以睡」。之前的无条件 true 是误导：
+                // 收尾调用仍会被 preSleepWaitBlockedV2 拒绝，模型于是反复重试。
+                shouldSleep: preSleepReleased,
+                preSleepWaitSatisfied: preSleepReleased,
+                nextStep: preSleepReleased
+                  ? '调用 qq_set_wake_config 设置下一次唤醒，然后结束本回合，不要再次调用 qq_wait_for_messages'
+                  : undefined,
                 newMessages: [],
                 readThroughSeq: readThroughSeqV2(st),
                 unreadCount: st.unread.length,
