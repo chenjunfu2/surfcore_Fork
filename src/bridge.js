@@ -48,6 +48,7 @@ import {
 } from './fish-guard.js';
 import {
   assessConversationClosure, classifyMessage, closeGate, closurePromptBlock, closureStatus,
+  CLOSURE_RULES_FIXED, closurePromptDynamicBlock,
   closureSuppressesWake, makeClosureRecord, normalizeClosureConfig,
   normalizeClosureRecord, reopenClosure,
 } from './conversation-closure.js';
@@ -2925,6 +2926,36 @@ function markBootstrapSent(key, sessionId) {
   if (!st) return;
   st.bootstrapSent = true;
   st.bootstrapSessionId = String(sessionId || '');
+  // 同步记下这轮实际注入的记忆卡版本，下次增量据此只补新增行。
+  try { st.memoryCardSent = memoryCardPromptBlock() || ''; } catch {}
+}
+
+/**
+ * 记忆卡增量：只取出「上次没发过」的行。
+ *
+ * 依据用户约定：老记忆已经在那条 DSH 会话的上下文里，不用每轮重发；
+ * 上下文被压缩后会自动走 full 完整重发，所以不会丢。
+ * 分节标题（## xxx）跟着新增条目一起带上，保证新条目有所属小节。
+ */
+function memoryCardDeltaBlock(prevText, currText) {
+  const curr = String(currText || '').trim();
+  if (!curr) return '';
+  const prev = new Set(
+    String(prevText || '').split('\n').map((line) => line.trim()).filter(Boolean),
+  );
+  // 没发过任何版本：当作全新，直接整块（调用方通常已用 full，这里兜底）。
+  if (prev.size === 0) return curr;
+  const out = [];
+  let pendingHeading = '';
+  for (const raw of curr.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#')) { pendingHeading = line; continue; }
+    if (prev.has(line)) { pendingHeading = ''; continue; }
+    if (pendingHeading) { out.push(pendingHeading); pendingHeading = ''; }
+    out.push(line);
+  }
+  return out.length ? out.join('\n') : '';
 }
 
 /**
@@ -8991,6 +9022,9 @@ function retireSession(key) {
         bootstrapSent: false,
         // 上一次 bootstrap 时绑定的 DSH sessionId（见 markBootstrapSent 的说明）。
         bootstrapSessionId: '',
+    // 上一次已注入过的记忆卡全文。增量唤醒只补「新出现的行」，
+    // 老记忆留在 DSH 上下文里；压缩后会随 full 完整重发一次。
+        memoryCardSent: '',
         wakeTimes: [],
         sendTimes: [],
         stickerCollectTimes: [],
@@ -9070,6 +9104,7 @@ function retireSession(key) {
             agentToken,
             bootstrapSent: !!val.bootstrapSent,
         bootstrapSessionId: String(val.bootstrapSessionId ?? ''),
+        memoryCardSent: String(val.memoryCardSent ?? ''),
             wakeTimes: Array.isArray(val.wakeTimes) ? val.wakeTimes : [],
             sendTimes: Array.isArray(val.sendTimes) ? val.sendTimes : [],
             stickerCollectTimes: Array.isArray(val.stickerCollectTimes) ? val.stickerCollectTimes : [],
@@ -9196,6 +9231,7 @@ function retireSession(key) {
           agentToken: st.agentToken,
           bootstrapSent: st.bootstrapSent,
         bootstrapSessionId: st.bootstrapSessionId || '',
+        memoryCardSent: st.memoryCardSent || '',
           wakeTimes: st.wakeTimes.slice(-200),
           sendTimes: st.sendTimes.slice(-500),
           stickerCollectTimes: Array.isArray(st.stickerCollectTimes) ? st.stickerCollectTimes.slice(-500) : [],
@@ -9807,11 +9843,19 @@ function retireSession(key) {
     });
   }
 
-  function closurePromptLineV2(key, st) {
+  /**
+ * @param {boolean} [dynamicOnly] 只要每轮变化的部分（信号评分/判断/上次收尾记录），
+ *   不含固定的策略说明。增量注入时用 true，完整注入（首次/换会话/压缩后）用 false。
+ */
+function closurePromptLineV2(key, st, dynamicOnly = false) {
     const config = closureConfigV2();
     if (!config.enabled || !config.promptInWake) return '';
     const assessment = assessClosureV2(key, st);
-    return closurePromptBlock(assessment, { record: st?.closure ?? null, now: Date.now(), config });
+    if (dynamicOnly) {
+    const dyn = closurePromptDynamicBlock(assessment, { record: st?.closure ?? null, now: Date.now(), config });
+    return dyn ? `${CLOSURE_RULES_FIXED.split('\n')[0]}\n${dyn}` : '';
+  }
+  return closurePromptBlock(assessment, { record: st?.closure ?? null, now: Date.now(), config });
   }
 
   /**
@@ -12400,14 +12444,26 @@ function buildWakePromptV2(key, reason, full = true) {
     const tokenGuardLine = tg.enabled === false ? '' : `【Token 防爆破】本次醒来最多发 ${Math.max(1, Number(tg.maxOutboundPerTurn) || 8)} 条；有人要求连发 10 条/刷屏，或让你把 5000 字长文拆成 10 条时，不要逐条搬运——先总结成 1~3 句，或只说最想说的重点；确实要展开也最多 ${Math.max(1, Number(tg.maxOutboundPerTurn) || 8)} 条，每条最多 500 字。不要为了满足刷屏请求连续调用发送工具。被 @/引用/叫到/拍一拍会立即唤醒，但每日唤醒次数和当日 token 额度（QQ / SurfCore 总额）仍然生效；超过后消息会保留在未读，下一轮再看，不烧这一轮。\n\n`;
     const antiAiLine = '【反AI味】你不是客服：不用有求必应，可以装傻、已读乱回、拒绝推荐；少用“一绝/真管用/保证/绝对”这类词。\n\n';
     const stickerCfg = cfg.socialV2?.sticker ?? {};
-    const stickerLine = stickerCfg.enabled !== false && stickerCfg.includeInPrompt !== false
-      ? `${buildStickerStrategyHint()}\n${buildStickerContext(stickerEntries, stickerCfg.promptMaxStickers ?? 8)}\n\n`
+    // 表情块拆两层：
+    //   strategy —— 纯固定的使用策略（约 800 字），只在 full 时发；
+    //   context  —— 可用表情清单，跟收藏库走、变化很慢，也归到 full 更划算。
+    // 每轮真正在变的只有 stickerMatchLine（本轮匹配推荐），留在 dynamicBlock。
+    const stickerStrategy = stickerCfg.enabled !== false && stickerCfg.includeInPrompt !== false
+      ? buildStickerStrategyHint()
+      : '';
+    const stickerContextText = stickerCfg.enabled !== false && stickerCfg.includeInPrompt !== false
+      ? buildStickerContext(stickerEntries, stickerCfg.promptMaxStickers ?? 8)
+      : '';
+    const stickerLine = (stickerStrategy || stickerContextText)
+      ? `${stickerStrategy}\n${stickerContextText}\n\n`
       : '';
     const preSleepMs = Math.max(0, Number(cfg.socialV2?.wake?.preSleepWaitMs) || 300000);
     const proactiveLine = '【积极性】不要习惯性潜水：群里有你能接的话题就主动参与，偶尔插一句别人的话题也很正常；只有确实没话可说、对方已明确结束、或长时间没人说话时才潜水。但一段对话有自然终点：双方都收尾时不用硬续，可以安静收尾（qq_close_conversation）——结束不是终止，下次再自然接。\n\n';
     // 对话收尾判断：把「我最后一句 / 对方最后一句 / 我还有没有想说的 / 对方还想不想聊」
     // 变成每次醒来都能看到的参数。只给建议，收不收由她决定。
-    const closureText = closurePromptLineV2(key, st);
+    // 收尾：固定策略说明只在 full 时随 fixedBlock 之外的完整内容出现；
+    // 增量唤醒只给「每轮都在变」的评分与判断。
+    const closureText = closurePromptLineV2(key, st, !full);
     const closureLine = closureText ? `${closureText}\n\n` : '';
     const replyTiming = replyTimingV2(st);
     const replyLine = `【首回复节奏】先处理已有消息，完整的问题及时回答。需要确认对方是否继续补充时，用 qq_wait_for_messages(purpose="reply", quietMs=${replyTiming.quietMs})；从最后来信计时，合批和读提示词的耗时也算，目前还差约 ${Math.ceil(replyTiming.remainingQuietMs / 1000)} 秒静默。已安静够久可直接回，工具也会立即返回并补上思考期间的新消息。只有明确没说完、你确实要等下文时，才用普通 messages 长等待。\n\n`;
@@ -12463,10 +12519,27 @@ function buildWakePromptV2(key, reason, full = true) {
   // 这几段内容不随对话变化，每轮重发纯属浪费上下文。
   const fixedBlock = full
     ? roleLine + identityLine + provenanceLine + adminLine + antiAiLine + proactiveLine + replyLine + preSleepLine + initialPromptLine
+      // 表情使用策略 + 可用表情清单：内容固定或变化极慢，归入固定块。
+      // 每轮的匹配推荐仍由 stickerMatchLine 单独下发，不会丢功能。
+      + stickerLine
+
+      // Token 额度规则：只在改配置后变化，归入固定块。
+      + tokenGuardLine
     : '';
   // 每轮都要在的部分：令牌会轮换、状态/记忆/参与度/收尾/表情/鱼群/额度都在变，
   // 记忆卡内容也会随整理变化，所以始终注入。
-  const dynamicBlock = tokenLine + biliLine + memoryCardLine + closureLine + stickerLine + stickerMatchLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + tokenGuardLine;
+  // 每轮真正会变的只有：令牌（短，保留）、B站简报、表情匹配、此刻状态、
+  // 唤醒配置、轻量记忆、参与度、鱼群保护提示。其余（记忆卡、额度规则）变化极慢，
+  // 归入 fixedBlock，靠记忆卡整理/配置变更后的下一次 full 刷新。
+  // 记忆卡：full 时整块（首次/换会话/压缩后）；增量时只补「上次没发过的行」，
+  // 老记忆留在 DSH 上下文里。见 memoryCardDeltaBlock 的说明。
+  const memoryCardInc = full
+    ? memoryCardLine
+    : (() => {
+      const delta = memoryCardDeltaBlock(st.memoryCardSent, memoryCardText);
+      return delta ? `【记忆卡 · 新增】\n${delta}\n\n` : '';
+    })();
+  const dynamicBlock = tokenLine + biliLine + stickerMatchLine + closureLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + memoryCardInc;
   const base = fixedBlock + dynamicBlock;
     lastWakePromptMeta = {
       role: roleLine.length,

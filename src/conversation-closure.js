@@ -389,6 +389,42 @@ export function formatClosureRecord(record, now = Date.now()) {
  * 每次唤醒注入的判断块。只给「参数 + 建议」，不替模型做决定。
  * 有近期对话才注入；没有对话时返回空串，避免每轮白烧 token。
  */
+/**
+ * 收尾规则里**固定不变**的那部分说明。上下文压缩/首次接入时才需要重发，
+ * 每轮唤醒重复它是纯浪费（用户 2026-11-02 反馈）。
+ * 与 closurePromptDynamicBlock 拼起来才是完整内容。
+ */
+export const CLOSURE_RULES_FIXED = [
+  '【对话收尾判断】先判断这段是否已经自然走到终点，再决定要不要开口。',
+  '如果判断可以收尾：不要再补一句，调用 qq_close_conversation（可留 summary / nextOpening）。这不是潜水，不用沉睡前观察；对方再找你、开新话题仍会照常醒。如果还要聊就正常回；只是等对方补充，用 qq_wait_for_messages(purpose="reply")。不要用收尾逃避提问/求助，也不要每轮都收尾。',
+].join('\n');
+
+/**
+ * 收尾判断里**每轮都会变**的部分：四个信号评分 + 判断结论 + 上次收尾记录。
+ * 不含固定策略说明，供增量注入使用。
+ */
+export function closurePromptDynamicBlock(assessment, { record = null, now = Date.now(), config = {} } = {}) {
+  const cfg = normalizeClosureConfig(config);
+  if (!cfg.enabled || !cfg.promptInWake) return '';
+  if (!assessment || (!assessment.signals?.lastOtherKind && !assessment.signals?.lastSelfKind)) return '';
+  const s = assessment.signals;
+  const lastOther = s.lastOtherKind ? labelOf(s.lastOtherKind) : '暂无';
+  const lastSelf = s.lastSelfKind ? labelOf(s.lastSelfKind) : '暂无';
+  const lines = [];
+  lines.push(`- 对方最后一句：${lastOther}；我最后一句：${lastSelf}。`);
+  lines.push(`- 我的继续意愿：${level(s.ownIntent, 0.25, 0.6)}（想说没说的 ${s.thoughtCount} 条）；对方的继续意愿：${level(s.theirIntent, 0.2, 0.6)}；话题闭环：${level(s.topicClosed, 0.3, 0.7)}；节奏疲劳：${level(s.fatigue, 0.3, 0.7)}。`);
+  const openText = s.openLoops > 0 ? '有未答的提问/请求' : '没有未答的提问';
+  lines.push(`- 未完成：${openText}。判断：${VERDICT_ADVICE[assessment.verdict] ?? '继续观察'}。`);
+  if (record && record.at) {
+    if (record.reopenedAt && now - Number(record.reopenedAt) < 10 * 60 * 1000) {
+      lines.push(`上次这段刚收过尾，现在对方又开口了：这是新的开始，别复读上次的结尾。${formatClosureRecord(record, now)}`);
+    } else {
+      lines.push(formatClosureRecord(record, now));
+    }
+  }
+  return lines.join('\n');
+}
+
 export function closurePromptBlock(assessment, { record = null, now = Date.now(), config = {} } = {}) {
   const cfg = normalizeClosureConfig(config);
   if (!cfg.enabled || !cfg.promptInWake) return '';
