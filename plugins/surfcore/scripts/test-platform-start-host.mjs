@@ -4,7 +4,7 @@
  * 钉住：
  *   · 开关关闭时插件加载不会启动生物钟（scheduler.running=false / disabled=true）；
  *   · /overview 暴露 platformStart；
- *   · /bridge 的 start-qq / start-bili / start-all 在开关关闭时不会偷偷拉起平台。
+ *   · /bridge 的 start-qq / start-all 在开关关闭时不会偷偷拉起平台。\n *   2026-11-02 slim 化：B站 / 桌宠 / 语音 已移除，只校验 QQ。
  *
  * 用临时 DSH_HOME，不读写真实 ~/.dsh。
  */
@@ -20,7 +20,7 @@ fs.mkdirSync(stateDir, { recursive: true });
 fs.writeFileSync(path.join(stateDir, 'config.json'), `${JSON.stringify({
   version: 1,
   bridge: { autoStart: true },
-  platforms: { start: { qq: false, bili: false } },
+  platforms: { start: { qq: false } },
 }, null, 2)}\n`, 'utf8');
 
 process.env.DSH_HOME = tmp;
@@ -83,13 +83,11 @@ try {
 
   const overview = await invoke(api, 'GET', '/dsh-surfcore/api/overview');
   assert.equal(overview.status, 200);
-  assert.deepEqual(overview.data.platformStart, { qq: false, bili: false },
+  assert.deepEqual(overview.data.platformStart, { qq: false },
     '/overview 的 platformStart 应反映开关');
-  assert.ok(overview.data.launch?.qq && overview.data.launch?.bili && overview.data.launch?.pet && overview.data.launch?.voice, 'overview 必须带统一 launch 状态');
-  assert.equal(overview.data.scheduler.running, false, 'B站 开关关闭时生物钟不应运行');
-  assert.equal(overview.data.scheduler.disabled, true, 'B站 开关关闭时 scheduler.disabled 应为 true');
+assert.ok(overview.data.launch?.qq, 'overview 必须带统一 launch 状态');
 
-  for (const action of ['start-qq', 'start-bili']) {
+  for (const action of ['start-qq']) {
     const res = await invoke(api, 'POST', '/dsh-surfcore/api/bridge', { action });
     assert.equal(res.status, 409, `${action} 在开关关闭时应拒绝`);
     assert.match(String(res.data.error ?? ''), /启动开关/, `${action} 的错误文案应说明开关关闭`);
@@ -97,11 +95,11 @@ try {
 
   // 新的一键启动：多选 + 每项结构化结果；平台开关关闭时不允许偷偷拉起。
   const selected = await invoke(api, 'POST', '/dsh-surfcore/api/bridge', {
-    action: 'start-selected', components: ['qq', 'bili'], voicePack: 'voice-local',
+    action: 'start-selected', components: ['qq'],
   });
   assert.equal(selected.status, 200);
   assert.equal(selected.data.ok, false, '平台开关关闭时一键启动不能报成功');
-  assert.equal(selected.data.items?.length, 2, '每个勾选项都要有独立结果');
+  assert.equal(selected.data.items?.length, 1, '每个勾选项都要有独立结果');
   for (const item of selected.data.items) {
     assert.equal(item.ok, false, `${item.id} 应失败`);
     assert.ok(item.code && item.hint, `${item.id} 失败必须有 code/hint`);
@@ -111,28 +109,26 @@ try {
   assert.ok(empty.data.hint, '空选择必须给下一步');
 
   const stopped = await invoke(api, 'POST', '/dsh-surfcore/api/bridge', {
-    action: 'stop-selected', components: ['qq', 'bili', 'pet', 'voice'],
+    action: 'stop-selected', components: ['qq'],
   });
   assert.equal(stopped.status, 200);
-  assert.equal(stopped.data.items?.length, 4, '一键停止要覆盖四项');
+  assert.equal(stopped.data.items?.length, 1, '一键停止要覆盖所选项目');
   assert.ok(stopped.data.items.every((x) => x.ok), '未运行的服务停止应幂等成功');
 
-  // 一键启动：两个都关 → 跳过两边，不启动任何进程。
+// 一键启动：开关关闭 → 跳过，不启动任何进程。
   const all = await invoke(api, 'POST', '/dsh-surfcore/api/bridge', { action: 'start-all' });
   assert.equal(all.status, 200);
   assert.equal(all.data.bridge?.skipped, true, 'QQ 关闭时一键启动应跳过桥接');
-  assert.equal(all.data.scheduler?.disabled, true, 'B站 关闭时一键启动应跳过生物钟');
   assert.equal(all.data.snowluma?.skipped, true, 'QQ 关闭时一键启动不应打开 SnowLuma');
 
   // 保存配置时把开关打开（跳过真实进程，只验证配置落盘与返回值）。
   const saved = await invoke(api, 'POST', '/dsh-surfcore/api/config', {
-    unified: { platforms: { start: { qq: true, bili: true } } },
+    unified: { platforms: { start: { qq: true } } },
   });
   assert.equal(saved.status, 200);
   assert.equal(saved.data.platformStart?.qq, true);
-  assert.equal(saved.data.platformStart?.bili, true);
   const onDisk = JSON.parse(fs.readFileSync(path.join(stateDir, 'config.json'), 'utf8'));
-  assert.deepEqual(onDisk.platforms.start, { qq: true, bili: true });
+  assert.deepEqual(onDisk.platforms.start, { qq: true });
 
   console.log('platform-start host wiring OK');
 } finally {

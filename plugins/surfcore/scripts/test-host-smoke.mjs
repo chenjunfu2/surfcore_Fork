@@ -82,7 +82,7 @@ if (!apiRoute || !extRoute || !healthRoute) throw new Error('路由没有全部�
 const health = await invoke(healthRoute, 'GET', '/dsh-surfcore/health');
 console.log('health:', health.statusCode, health.body.slice(0, 200));
 
-for (const path of ['/dsh-surfcore/api/overview', '/dsh-surfcore/api/config', '/dsh-surfcore/api/persona', '/dsh-surfcore/api/memory', '/dsh-surfcore/api/memory-card', '/dsh-surfcore/api/memory-card/full', '/dsh-surfcore/api/align', '/dsh-surfcore/api/extensions', '/dsh-surfcore/api/platforms', '/dsh-surfcore/api/diagnostics', '/dsh-surfcore/api/bili/automation', '/dsh-surfcore/api/watch-history', '/dsh-surfcore/api/preferences/scan?sources=local&limit=5', '/dsh-surfcore/api/bili/fish-guard', '/dsh-surfcore/api/fish-guard/qq']) {
+for (const path of ['/dsh-surfcore/api/overview', '/dsh-surfcore/api/config', '/dsh-surfcore/api/persona', '/dsh-surfcore/api/memory', '/dsh-surfcore/api/memory-card', '/dsh-surfcore/api/memory-card/full', '/dsh-surfcore/api/align', '/dsh-surfcore/api/extensions', '/dsh-surfcore/api/platforms', '/dsh-surfcore/api/diagnostics', '/dsh-surfcore/api/fish-guard/qq']) {
   const res = await invoke(apiRoute, 'GET', path);
   const data = JSON.parse(res.body || '{}');
   console.log(path, res.statusCode, data.ok, Object.keys(data).slice(0, 8));
@@ -101,19 +101,18 @@ for (const path of ['/dsh-surfcore/api/overview', '/dsh-surfcore/api/config', '/
     }
     // 平台启动开关：唯一真相必须出现在合体层配置里，且两个都必须是布尔。
     const start = data.unified?.platforms?.start;
-    if (!start || typeof start.qq !== 'boolean' || typeof start.bili !== 'boolean') {
-      throw new Error('/config 缺少 platforms.start.{qq,bili}');
+    if (!start || typeof start.qq !== 'boolean') {
+      throw new Error('/config 缺少 platforms.start.qq');
     }
   }
   if (path.endsWith('/overview')) {
     if (!('admin' in data)) throw new Error('/overview 没有返回管理员摘要');
     if (typeof data.admin?.gentle !== 'boolean') throw new Error('管理员摘要缺少 gentle');
     // 设置页顶部状态点 / 概览三按钮都读它：缺了会静默变成「开关都开」。
-    if (!data.platformStart || typeof data.platformStart.qq !== 'boolean' || typeof data.platformStart.bili !== 'boolean') {
-      throw new Error('/overview 缺少 platformStart.{qq,bili}');
+    if (!data.platformStart || typeof data.platformStart.qq !== 'boolean') {
+      throw new Error('/overview 缺少 platformStart.qq');
     }
-    if (typeof data.scheduler?.running !== 'boolean') throw new Error('/overview 缺少 scheduler.running');
-  }
+    }
   if (path.endsWith('/bili/automation')) {
     if (data.ok !== true) throw new Error('/bili/automation 没有返回 ok');
     if (!data.limits || typeof data.limits.daily !== 'number') throw new Error('自动化快照缺少 limits.daily');
@@ -159,18 +158,6 @@ const sl = await invoke(apiRoute, 'POST', '/dsh-surfcore/api/bridge', { action: 
 const slData = JSON.parse(sl.body || '{}');
 console.log('start-snowluma', sl.statusCode, slData.ok, slData.skipped, slData.message);
 if (sl.statusCode !== 200 || slData.ok !== true) throw new Error('start-snowluma 路由未通过');
-
-// 扫码登录：只读状态接口 + 非法 id（不启动 Edge / 不真扫码）。
-const accRes = await invoke(apiRoute, 'GET', '/dsh-surfcore/api/bili/accounts');
-const acc = JSON.parse(accRes.body || '{}');
-console.log('bili/accounts', accRes.statusCode, acc.ok, acc.fish?.configured, acc.owner?.configured);
-if (accRes.statusCode !== 200 || acc.ok !== true) throw new Error('/bili/accounts 没有返回 ok');
-if (!acc.fish || typeof acc.fish.configured !== 'boolean') throw new Error('/bili/accounts 缺少 fish 状态');
-if (!acc.owner || typeof acc.owner.configured !== 'boolean') throw new Error('/bili/accounts 缺少 owner 状态');
-if (JSON.stringify(acc).match(/sessdata|bili_jct/i)) throw new Error('/bili/accounts 泄露了 cookie');
-const badPoll = await invoke(apiRoute, 'GET', '/dsh-surfcore/api/bili/qr/poll?id=bad');
-console.log('qr/poll bad id', badPoll.statusCode);
-if (badPoll.statusCode !== 400) throw new Error('非法扫码 id 应返回 400');
 
 // 隐私闸门：QQ号/手机号/私信话题必须被丢弃
 const { sanitizeText } = await import('../lib/privacy.js');

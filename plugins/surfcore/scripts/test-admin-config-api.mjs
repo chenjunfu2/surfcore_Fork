@@ -31,10 +31,6 @@ fs.writeFileSync(path.join(tempRoot, 'config.json'), JSON.stringify({
   dsh: { authToken: 'fixture-token' },
   consoleToken: 'fixture-console-token',
 }, null, 2));
-fs.writeFileSync(path.join(tempState, 'bili.config.json'), JSON.stringify({
-  owner: { mid: '20002', name: '测试B站昵称' },
-  self: { mid: '20003', name: '测试B站账号' },
-}, null, 2));
 fs.writeFileSync(path.join(tempState, 'config.json'), JSON.stringify({ version: 1 }, null, 2));
 
 process.env.SURFCORE_ROOT = tempRoot;
@@ -91,7 +87,6 @@ async function invoke(method, p, body) {
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const qqConfigFile = path.join(tempRoot, 'config.json');
-const biliConfigFile = path.join(tempState, 'bili.config.json');
 const unifiedFile = path.join(tempState, 'config.json');
 
 try {
@@ -99,19 +94,16 @@ try {
   const before = await invoke('GET', '/config');
   assert.equal(before.status, 200);
   assert.deepEqual(before.data.unified.admin.qq, '10001');
-  assert.deepEqual(before.data.unified.admin.biliMid, '20002');
   assert.equal(before.data.unified.admin.gentle, true, '温柔模式默认开');
   assert.equal(readJson(unifiedFile).admin, undefined, 'GET 只读，不能偷偷写文件');
 
   // 2) 设置页正常保存（全量 qq/bili/unified，没动管理员）：两份 owner 不能被抹掉。
   const unchanged = await invoke('POST', '/config', {
     qq: readJson(qqConfigFile),
-    bili: readJson(biliConfigFile),
     unified: { version: 1, persona: { file: 'roles/角色.md' } },
   });
   assert.equal(unchanged.status, 200);
   assert.equal(readJson(qqConfigFile).ownerQQ, '10001', '正常保存不能丢 ownerQQ');
-  assert.equal(readJson(biliConfigFile).owner.mid, '20002', '正常保存不能丢 owner.mid');
   assert.equal(readJson(unifiedFile).admin.qq, '10001', '保存后合体层 admin 要落盘');
 
   // 2.1 白名单 / 黑名单卡片保存：四个数组直接落盘；重复 / 非法项由 normalizeIdList 收敛。
@@ -124,7 +116,6 @@ try {
       deny: { users: ['30003', '30003', 'abc'], private: [40004], groups: ['55555'] },
       allowAllWhenEmpty: false,
     },
-    bili: readJson(biliConfigFile),
     unified: { version: 1, persona: { file: 'roles/角色.md' } },
   });
   assert.equal(whitelist.status, 200);
@@ -139,48 +130,24 @@ try {
     groups: ['55555'],
   }, '黑名单数组（含人的黑名单 deny.users）应去重、转字符串并丢弃非法项');
 
-  // 2.2 作息窗口（B站 页「苏醒窗口」）：数组必须原样落盘。
-  //     2026-10-24 用户反馈加/删/改全部弹回；前端 setPath 曾把 "night.windows" 按字符拆，
-  //     服务端这条保存链路当时没被测试覆盖。这里补一条真实的 POST → 文件断言。
-  const biliWithWindows = readJson(biliConfigFile);
-  biliWithWindows.night = {
-    windows: [
-      { start: '6:00', end: '8:00', wakes: 3 },
-      { start: '20:00', end: '22:00', wakes: 1 },
-    ],
-    skipChance: 0.2,
-  };
-  const savedWindows = await invoke('POST', '/config', {
-    qq: readJson(qqConfigFile),
-    bili: biliWithWindows,
-    unified: { version: 1, persona: { file: 'roles/角色.md' } },
-  });
-  assert.equal(savedWindows.status, 200);
-  assert.deepEqual(readJson(biliConfigFile).night.windows, biliWithWindows.night.windows, '作息窗口数组必须原样落盘');
-  assert.equal(readJson(biliConfigFile).night.skipChance, 0.2, '同组其它参数不能被窗口保存截断');
-
   // 3) 管理员卡片两处一起改：三份文件必须同时变成同一个人。
   const edited = await invoke('POST', '/config', {
     qq: { ...readJson(qqConfigFile), sendDelayMs: 321 },
-    bili: readJson(biliConfigFile),
     unified: {
       version: 1,
-      admin: { qq: '100001', biliMid: '200002', biliName: '新主人', displayName: '新称呼', gentle: true },
+      admin: { qq: '100001', displayName: '新称呼', gentle: true },
     },
   });
   assert.equal(edited.status, 200);
   assert.equal(readJson(qqConfigFile).ownerQQ, '100001', '管理员卡片改 QQ 要落到 config.json');
   assert.equal(readJson(qqConfigFile).sendDelayMs, 321, '其它 QQ 参数不能被截断');
-  assert.equal(readJson(biliConfigFile).owner.mid, '200002', '管理员卡片改 B站 UID 要落到 bili.config.json');
-  assert.equal(readJson(biliConfigFile).owner.name, '新主人');
   assert.deepEqual(readJson(unifiedFile).admin, {
-    qq: '100001', biliMid: '200002', biliName: '新主人', displayName: '新称呼', gentle: true,
+    qq: '100001', biliMid: '', biliName: '', displayName: '新称呼', gentle: true,
   });
 
   // 4) 关掉温柔模式：只影响提示词，身份仍然保留。
   const mild = await invoke('POST', '/config', {
     qq: readJson(qqConfigFile),
-    bili: readJson(biliConfigFile),
     unified: { ...readJson(unifiedFile), admin: { ...readJson(unifiedFile).admin, gentle: false } },
   });
   assert.equal(mild.status, 200);
@@ -190,13 +157,11 @@ try {
   // 5) overview 里要有管理员摘要，供概览/诊断看。
   const overview = await invoke('GET', '/overview');
   assert.equal(overview.data.admin.qq, '100001');
-  assert.equal(overview.data.admin.aligned, true);
   assert.equal(overview.data.admin.gentle, false);
 
   // 6) 非法号码不能进配置：保存时会被丢弃，不会把 owner 写成乱码。
   await invoke('POST', '/config', {
     qq: readJson(qqConfigFile),
-    bili: readJson(biliConfigFile),
     unified: { ...readJson(unifiedFile), admin: { ...readJson(unifiedFile).admin, qq: 'abc' } },
   });
   const afterBad = readJson(unifiedFile).admin;

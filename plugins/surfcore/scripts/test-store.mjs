@@ -1,7 +1,7 @@
 /** 配置存储回归：脱敏/还原密钥、范围收敛、默认值合并。 */
 import assert from 'node:assert/strict';
 import {
-  MASK, normalizeBiliConfig, normalizeQqConfig, redactForUi, restoreMaskedSecrets,
+  MASK, normalizeQqConfig, redactForUi, restoreMaskedSecrets,
 } from '../lib/store.js';
 
 const sample = {
@@ -45,48 +45,5 @@ assert.equal(cardMini.biliBridge.share.cardMode, 'miniapp', '显式 cardMode 优
 assert.equal(cardMini.biliBridge.share.card, true);
 const cardBad = normalizeQqConfig({ biliBridge: { share: { cardMode: 'weird' } } });
 assert.equal(cardBad.biliBridge.share.cardMode, 'text', '非法值回默认，不要静默变 off');
-
-const bili = normalizeBiliConfig({
-  night: { windows: [{ start: '6:00', end: '8:00', wakes: 3 }], skipChance: 2, maxVideos: 99 },
-  quota: { shareDaily: -1 },
-  share: { via: 'nope' },
-});
-assert.equal(bili.night.windows[0].start, '6:00');
-assert.equal(bili.night.skipChance, 0.95);
-assert.equal(bili.night.maxVideos, 20);
-assert.equal(bili.night.minGapMin, 20);
-assert.equal(bili.quota.shareDaily, 0);
-assert.equal(bili.share.via, 'dynamic');
-
-// 2026-10-22：四本账额度 / 四类动态改成可编辑，保存时必须收敛
-const biliEditable = normalizeBiliConfig({
-  limits: { daily: -1, globalMin: 999, mineDaily: 50 },
-  dynamics: { gapMin: 1, kinds: { best: { slot: 99 }, game: { enabled: false } } },
-});
-assert.equal(biliEditable.limits.daily, 0);
-assert.equal(biliEditable.limits.globalMin, 120);
-assert.equal(biliEditable.limits.mineDaily, 50);
-assert.equal(biliEditable.dynamics.gapMin, 5);
-assert.equal(biliEditable.dynamics.kinds.best.slot, 23);
-assert.equal(biliEditable.dynamics.kinds.best.minLen, 50);
-assert.equal(biliEditable.dynamics.kinds.anime.slot, 16);
-assert.equal(biliEditable.dynamics.kinds.game.enabled, false);
-assert.equal(biliEditable.dynamics.enabled, true);
-
-// 2026-10-23：偏好权重（用户要求「每个偏好能拉高/降低」）保存时收敛。
-const biliTaste = normalizeBiliConfig({
-  preferences: {
-    like: ['DeepSeek', 'deepseek ', ' 猫咪 ', '', 'AI'],
-    keywords: ['手书', 'deepseek'],
-    dislike: [],
-    weights: { deepseek: 9, '猫咪': 0, '不存在': 3, '手书': 'abc' },
-  },
-});
-assert.deepEqual(biliTaste.preferences.like, ['DeepSeek', '猫咪', 'AI'], '大小写变体合并、空项丢弃');
-assert.deepEqual(biliTaste.preferences.keywords, ['手书'], '和爱看重复的额外关键词去掉');
-assert.equal(biliTaste.preferences.weights.DeepSeek, 5, '权重越界收敛到 5');
-assert.equal(biliTaste.preferences.weights['猫咪'], 0, '0 是合法的「停用」');
-assert.equal(biliTaste.preferences.weights['不存在'], undefined, '不在列表里的权重键要清掉');
-assert.equal(biliTaste.preferences.weights['手书'], 1, '非法权重回落到默认 1');
 
 console.log('store tests OK');

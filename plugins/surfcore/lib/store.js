@@ -274,11 +274,11 @@ export function platformStartsFrom(user = {}) {
     ? user.bridge.autoStart
     : null;
   const fromEnabled = (id, fallback) => (enabled ? enabled.includes(id) : fallback);
+  // 2026-11-02 slim 化：B站 已移除，平台启动开关只剩 QQ 一项。
   return {
     qq: typeof explicit.qq === 'boolean'
       ? explicit.qq
       : (legacyAutoStart !== null ? legacyAutoStart : fromEnabled('qq', true)),
-    bili: typeof explicit.bili === 'boolean' ? explicit.bili : fromEnabled('bili', true),
   };
 }
 
@@ -479,7 +479,6 @@ export function saveUnified(incoming) {
   const start = isPlainObject(next.platforms.start) ? next.platforms.start : {};
   next.platforms.start = {
     qq: start.qq !== false,
-    bili: start.bili !== false,
   };
   next.bridge = isPlainObject(next.bridge) ? next.bridge : {};
   next.bridge.autoStart = next.platforms.start.qq;

@@ -1,5 +1,5 @@
 /**
- * 平台启动开关（platforms.start.{qq,bili}）的配置归一/迁移。
+ * 平台启动开关（platforms.start.qq）的配置归一/迁移。\n * 2026-11-02 slim 化：B站 已移除，只剩 QQ 一项。
  *
  * 为什么单独测：
  *   2026-10-24 之前 QQ 的自动启动是 `bridge.autoStart`（默认 false），B站 无条件启动。
@@ -27,52 +27,52 @@ const writeUnified = (value) => {
 
 try {
   // 1) 老配置：bridge.autoStart=true，没有 platforms.start → QQ 跟随旧开关。
-  writeUnified({ version: 1, bridge: { autoStart: true }, platforms: { enabled: ['qq', 'bili'] } });
-  assert.deepEqual(store.readUnified().config.platforms.start, { qq: true, bili: true },
+  writeUnified({ version: 1, bridge: { autoStart: true }, platforms: { enabled: ['qq'] } });
+  assert.deepEqual(store.readUnified().config.platforms.start, { qq: true },
     '老配置 autoStart=true 应迁移成 QQ 启动开');
 
   // 2) 老配置：autoStart=false → QQ 关、B站 仍默认开。
-  writeUnified({ version: 1, bridge: { autoStart: false }, platforms: { enabled: ['qq', 'bili'] } });
-  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false, bili: true },
+  writeUnified({ version: 1, bridge: { autoStart: false }, platforms: { enabled: ['qq'] } });
+  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false },
     '老配置 autoStart=false 应迁移成 QQ 启动关，B站 默认开');
 
   // 3) 显式 platforms.start 优先于旧字段与 enabled 数组。
   writeUnified({
     version: 1,
     bridge: { autoStart: true },
-    platforms: { enabled: ['qq', 'bili'], start: { qq: false, bili: false } },
+    platforms: { enabled: ['qq', 'bili'], start: { qq: false } },
   });
-  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false, bili: false },
+  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false },
     '显式 platforms.start 必须优先于 bridge.autoStart');
 
-  // 4) 没有 start、但 enabled 数组里明确只剩 bili → 视为 QQ 关。
-  writeUnified({ version: 1, platforms: { enabled: ['bili'] } });
-  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false, bili: true },
+  // 4) 没有 start、但 enabled 数组里没有 qq → 视为 QQ 关。
+  writeUnified({ version: 1, platforms: { enabled: [] } });
+  assert.deepEqual(store.readUnified().config.platforms.start, { qq: false },
     'platforms.enabled 应作为第二优先级的迁移来源');
 
   // 5) 全新用户：没有旧字段时两边默认都开。
   writeUnified({ version: 1 });
-  assert.deepEqual(store.readUnified().config.platforms.start, { qq: true, bili: true },
+  assert.deepEqual(store.readUnified().config.platforms.start, { qq: true },
     '没有旧字段时默认两边都启动');
 
   // 6) 保存：只收布尔、缺省 true，并把 bridge.autoStart 镜像成 QQ 的选择。
-  writeUnified({ version: 1, platforms: { start: { qq: true, bili: true } } });
-  const saved = store.saveUnified({ platforms: { start: { qq: false, bili: true } } });
-  assert.deepEqual(saved.config.platforms.start, { qq: false, bili: true });
+  writeUnified({ version: 1, platforms: { start: { qq: true } } });
+  const saved = store.saveUnified({ platforms: { start: { qq: false } } });
+  assert.deepEqual(saved.config.platforms.start, { qq: false });
   const onDisk = JSON.parse(fs.readFileSync(unifiedFile, 'utf8'));
-  assert.deepEqual(onDisk.platforms.start, { qq: false, bili: true });
+  assert.deepEqual(onDisk.platforms.start, { qq: false });
   assert.equal(onDisk.bridge.autoStart, false, '旧字段 bridge.autoStart 应镜像 new QQ 开关（降级可读）');
 
   // 7) 非布尔值不能把开关意外打开/关掉：按「缺省 = 开」收敛。
   writeUnified({ version: 1 });
-  const coerced = store.saveUnified({ platforms: { start: { qq: 'off', bili: 0 } } });
-  assert.deepEqual(coerced.config.platforms.start, { qq: true, bili: true },
+  const coerced = store.saveUnified({ platforms: { start: { qq: 'off' } } });
+  assert.deepEqual(coerced.config.platforms.start, { qq: true },
     '非布尔值应按缺省 true 处理（明确 false 才关）');
 
   // 8) 纯函数也能独立用（不读文件）：显式值优先。
   assert.deepEqual(
     store.platformStartsFrom({ platforms: { start: { qq: false } }, bridge: { autoStart: true } }),
-    { qq: false, bili: true },
+    { qq: false },
   );
 
   console.log('platform-start tests OK');

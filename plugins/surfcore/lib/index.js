@@ -318,6 +318,18 @@ export function apply(ctx) {
 
   ensureAdminProjection();
 
+  // ── 平台启动开关（2026-10-24 用户要求）──
+  // 唯一真相在合体层 config.json 的 platforms.start.qq；开关关掉 = 不自动启动、
+  // 不被「一键启动」带上，保存配置时宿主会把正在跑的桥接停掉。
+  // 2026-11-02 slim 化：B站 已整块移除，这里只剩 QQ 一项。
+  function platformStartState() {
+    const start = readUnified().config.platforms?.start ?? {};
+    return { qq: start.qq !== false };
+  }
+  function platformStartEnabled(id) {
+    return platformStartState()[id] !== false;
+  }
+
   // ── 角色人格：启动迁移 + 切换编排 ───────────────────────────────────────
   // 迁移只做一次：有旧记忆/旧 B站 账本才建第一个角色；旧目录原样保留作冷备份。
   function ensureCharacterSystem() {
