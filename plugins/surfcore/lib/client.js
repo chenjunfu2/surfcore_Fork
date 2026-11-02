@@ -1446,7 +1446,6 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
       const snow = overview?.snowluma ?? {};
       const platformStart = overview?.platformStart ?? {};
       const qqStart = platformStart.qq !== false;
-      const biliStart = platformStart.bili !== false;
       // ── 一键启动 / 停止（QQ+B站+桌宠+语音）────────────────────────────
       const launch = overview?.launch ?? {};
       const [launchSel, setLaunchSel] = useState({ qq: true });
@@ -2017,7 +2016,7 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
     }
 
     // ── 目的机制（主动找主人）：独立栏目「目的」里的设置与状态 ──────────────
-    // 载体（QQ / 桌宠）由 PurposeCarrierCard 选择；这里只做节奏、素材、预览与试一次。
+    // 载体固定为 QQ（桌宠载体已移除）；这里只做节奏、素材、预览与试一次。
     // 状态/预览/出发都走 /purpose/*：插件按当前载体路由到桥接或桌宠。
     function PurposeCard({ cfg, set, busy, setBusy, toast, carrier }) {
       const P = cfg?.purpose && typeof cfg.purpose === "object" ? cfg.purpose : {};
@@ -2227,148 +2226,14 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
     }
 
     // ── 目的机制 · 载体选择（桌宠 / QQ）──────────────────────────────────
-    // 2026-10-25 用户要求：目的机制独立成一个栏目；载体可选桌宠或 QQ，
-    // 未安装桌宠的用户默认 QQ。同一时刻只有一个载体在发，避免两边同时收到。
-    function PurposeCarrierCard({ cfg, set, busy, toast }) {
-      const P = cfg?.purpose && typeof cfg.purpose === "object" ? cfg.purpose : {};
-      const carrier = P.carrier === "pet" ? "pet" : "qq";
-      const modality = P.petModality === "voice" ? "voice" : "text";
-      const [status, setStatus] = useState(null);
-      useEffect(() => {
-        api("/purpose/status").then(setStatus).catch(() => {});
-      }, []);
-      const pet = status?.availability?.pet ?? {};
-      const qq = status?.availability?.qq ?? {};
-      const choose = (value) => {
-        set(["purpose", "carrier"], value);
-        toast(`✓ 载体改为「${value === "pet" ? "桌宠" : "QQ"}」，记得点底部保存`);
-      };
-      const seg = (options, value, onChange) => h("div", { style: { display: "inline-flex", gap: "4px", padding: "2px", borderRadius: "999px", background: "#fff", border: "1px solid #e3e6ee" } },
-        options.map(([val, label]) => h("button", {
-          key: val,
-          type: "button",
-          onClick: () => onChange(val),
-          style: {
-            border: "none",
-            borderRadius: "999px",
-            padding: "3px 12px",
-            fontSize: "12px",
-            lineHeight: 1.7,
-            cursor: "pointer",
-            background: value === val ? "linear-gradient(180deg,#8ab8ff,#5f97f0)" : "transparent",
-            color: value === val ? "#fff" : "#6d6a78",
-          },
-        }, label)));
-      const cardStyle = (active) => ({
-        flex: "1 1 240px",
-        minWidth: "220px",
-        padding: "10px 12px",
-        borderRadius: "10px",
-        border: `1px solid ${active ? "#6aa9ff" : "#e3e6ee"}`,
-        background: active ? "rgba(106,169,255,.08)" : "#fafbff",
-        cursor: "pointer",
-        boxShadow: active ? "0 0 0 2px rgba(106,169,255,.14)" : "none",
-      });
-      const petText = !status ? "读取中…"
-        : !pet.installed ? "未安装桌宠：先去「桌宠」页安装，再回来选"
-        : !pet.running ? "已安装 · 未运行（去「桌宠」页启动）"
-        : pet.online ? `在线${pet.roleName ? ` · 角色「${pet.roleName}」` : ""}`
-        : "已启动 · 还没连上（等几秒，或看「桌宠」页状态）";
-      const qqText = qq.running
-        ? `桥接运行中${qq.mode ? ` · 模式 ${qq.mode}` : ""}`
-        : "桥接没在运行：选了也要先在「QQ」页启动";
-      return h("div", { className: "qbw-card", style: { marginBottom: "10px" } },
-        h("h4", null, "触发载体",
-          h("span", { className: "qbw-badge" }, carrier === "pet" ? "桌宠" : "QQ"),
-          status?.ok === false ? h("span", { className: "qbw-badge warn" }, "状态读不到") : null),
-        h("p", null, "目的机制只有一套（素材 → 驱动 → 目标假设 → 选择 → 回执）；这里决定这一句从哪个载体发出去。同一时刻只有一个执行者，不会桌宠和 QQ 同时收到。"),
-        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" } },
-          h("div", { style: cardStyle(carrier === "qq"), onClick: () => choose("qq"), role: "button" },
-            h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "QQ 私聊（默认）"),
-            h("div", { className: "qbw-hint" }, qqText),
-            h("div", { className: "qbw-hint" }, "没安装桌宠的用户保持这一项即可。")),
-          h("div", { style: cardStyle(carrier === "pet"), onClick: () => choose("pet"), role: "button" },
-            h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "桌宠气泡 / 语音"),
-            h("div", { className: "qbw-hint" }, petText),
-            h("div", { className: "qbw-hint" }, "在桌面上说话：语音会念出来，气泡里始终显示文字。"))),
-        h("div", { style: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginTop: "10px" } },
-          h("span", { style: { fontSize: "12px", opacity: 0.75 } }, "桌宠主动搭话形式"),
-          seg([["text", "文本"], ["voice", "语音"]], modality, (value) => {
-            set(["purpose", "petModality"], value);
-            toast(`✓ 桌宠主动搭话改为「${value === "voice" ? "语音" : "文本"}」，记得保存`);
-          }),
-          h("span", { className: "qbw-hint" }, carrier === "pet" ? "语音也会同时显示气泡文字" : "切到桌宠载体后生效")),
-        h(Row, { label: "桌宠没开着时回落到 QQ", hint: "开：桌宠没运行时由桥接照常私聊（按它自己的闸门/排程）；关：宁可这轮不发" },
-          h("input", {
-            className: "qbw-switch",
-            type: "checkbox",
-            checked: P.petFallbackToQQ !== false,
-            onChange: (e) => set(["purpose", "petFallbackToQQ"], e.target.checked),
-          })),
-        status?.ok === false ? h("div", { className: "qbw-hint", style: { marginTop: "4px" } }, status.error || "") : null);
-    }
-
-    // ── 桌宠对话测试：验证人设 / 模型 / 语音链路（也能看到气泡是否弹出）────
-    function PetChatTestCard({ toast }) {
-      const [status, setStatus] = useState(null);
-      const [text, setText] = useState("在干嘛呀");
-      const [modality, setModality] = useState("text");
-      const [busy, setBusy] = useState("");
-      const [reply, setReply] = useState(null);
-      const [err, setErr] = useState("");
-      const load = async () => {
-        try { setStatus(await api("/pet/status")); } catch (e) { setErr(e.message); }
-      };
-      useEffect(() => { void load(); }, []);
-      const send = async () => {
-        setBusy("chat"); setErr(""); setReply(null);
-        try {
-          const r = await api("/pet/chat-test", { method: "POST", body: { text: text.trim() || "在吗", modality } });
-          if (!r.ok) throw new Error(r.error || "发送失败");
-          setReply(r.reply ?? null);
-          toast("✓ 她回了；桌宠那边也会弹气泡");
-          await load();
-        } catch (e) { setErr(e.message); } finally { setBusy(""); }
-      };
-      const chat = status?.chat ?? {};
-      const llm = status?.llm ?? {};
-      const voice = status?.voice ?? {};
-      const proactive = status?.proactive ?? {};
-      return h("div", { className: "qbw-card" },
-        h("h4", null, "桌宠对话",
-          h("span", { className: "qbw-badge " + (proactive.online ? "ok" : "warn") }, proactive.online ? "桌宠在线" : "桌宠离线")),
-        h("p", null, "对话走 DSH 默认模型，人设卡 / 记忆卡来自当前角色；用量计入 token 额度「其他」。语音回复走「语音」页的 TTS 配置。"),
-        h("div", { className: "qbw-hint" },
-          `角色：${status?.role?.name ?? "—"} · 模型：${llm.provider || "—"}/${llm.model || "—"} · 语音：${voice.enabled ? `${voice.route}（${voice.endpoint}）` : "未开启"} · 历史 ${chat.messages ?? 0} 条`),
-        h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", flexWrap: "wrap" } },
-          h("input", {
-            className: "qbw-input",
-            style: { flex: "1 1 220px" },
-            value: text,
-            placeholder: "对她说一句…",
-            onChange: (e) => setText(e.target.value),
-            onKeyDown: (e) => { if (e.key === "Enter") void send(); },
-          }),
-          h("select", { className: "qbw-select", value: modality, onChange: (e) => setModality(e.target.value) },
-            h("option", { value: "text" }, "文本回复"), h("option", { value: "voice" }, "语音回复")),
-          h(Btn, { kind: "qbw-btn2", onClick: send, disabled: !!busy || !proactive.online }, busy === "chat" ? "发送中…" : "发一句试试")),
-        !proactive.online ? h("div", { className: "qbw-hint", style: { marginTop: "4px" } }, "桌宠没在线：先在「桌宠」页启动；也可以切回 QQ 载体。") : null,
-        err ? h("div", { className: "qbw-err", style: { marginTop: "6px" } }, err) : null,
-        reply ? h("div", { className: "qbw-hint", style: { marginTop: "8px" } },
-          `她回（${reply.modality === "voice" ? "语音" : "文本"}）：${reply.text}`) : null);
-    }
-
     function PurposeTab({ qq, setQq, unified, setUnified, overview, busy, setBusy, toast, reload, goTab }) {
       return h("div", null,
         h("div", { className: "qbw-infobox" },
-          "「目的」现在是一个独立栏目：管小肥鱼什么时候主动找你、想说什么；载体可选桌宠或 QQ。",
-          "没装桌宠的用户默认走 QQ；装了桌宠后可以切到桌宠，同一时间只会有一个载体收到。"),
-        h(PurposeCarrierCard, { cfg: qq, set: setQq, busy, toast }),
-        h(PurposeCard, { cfg: qq, set: setQq, busy, setBusy, toast, carrier: qq?.purpose?.carrier }),
-        h(PetChatTestCard, { toast }),
+          "「目的」是一个独立栏目：管小肥鱼什么时候主动找你、想说什么。",
+          "载体固定为 QQ 私聊（桌宠载体与语音合成已移除）。"),
+        h(PurposeCard, { cfg: qq, set: setQq, busy, setBusy, toast, carrier: "qq" }),
         h("div", { className: "qbw-hint", style: { marginTop: "6px" } },
-          "桌宠的安装/启动、对话参数在「桌宠」页；人设与记忆在「角色 / 记忆」页。",
-          goTab ? h(Btn, { kind: "qbw-btn2", onClick: () => goTab("pet"), style: { marginLeft: "8px" } }, "去「桌宠」页") : null));
+          "人设与记忆在「角色 / 记忆」页。"));
     }
 
     // ── 对话收尾判断：每段对话有自然终点；收尾不是潜水 ──────────────────
