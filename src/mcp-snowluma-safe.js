@@ -739,7 +739,7 @@ server.tool(
   {
     groupId: z.union([z.number(), z.string()]).describe('群号（必须在白名单内）'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
-    messages: z.array(z.string()).min(1).describe('要发送的消息数组，每条为纯文本；也兼容传入 JSON 数组字符串')
+    messages: z.array(z.string()).min(1).describe('要发送的消息数组，每个元素是一条独立消息（纯文本）；即使只发一条也要写成数组，如 ["你好"]')
   },
   async ({ groupId, token, messages }) => {
     try {
@@ -777,11 +777,11 @@ server.tool(
 
 server.tool(
   'qq_send_message',
-  '统一发送工具：可发一条或多条，可引用某条消息，可自定义/按字数计算条间时间差。二代仿真模式专用。注意：字符串=一条消息，数组=多条消息；每个字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。一次最多 8 条（数组按条数算，桥接硬拦）；内容太长先总结/挑重点，不要拆成 10 条刷屏。只有以下情况才需要传 replyToMessageId 引用：① 你这条消息指向的人或消息并非最新一条别人的消息（也就是你在回更早的某条）；② 你连续几句话里不同消息指代的是不同的消息或不同的人。其他情况（上下文唯一、刚在接同一条最新消息）不要引用，别让对方猜，也别为了用工具而用。',
+  '统一发送工具：可发一条或多条，可引用某条消息，可自定义/按字数计算条间时间差。二代仿真模式专用。注意：messages 必须是字符串数组，每个元素是一条独立消息（即使只发一条也要写成 ["你好"]，不要直接传裸字符串）；每个字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。一次最多 8 条（数组按条数算，桥接硬拦）；内容太长先总结/挑重点，不要拆成 10 条刷屏。只有以下情况才需要传 replyToMessageId 引用：① 你这条消息指向的人或消息并非最新一条别人的消息（也就是你在回更早的某条）；② 你连续几句话里不同消息指代的是不同的消息或不同的人。其他情况（上下文唯一、刚在接同一条最新消息）不要引用，别让对方猜，也别为了用工具而用。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
-    messages: z.array(z.string()).min(1).describe('要发送的内容：字符串=一条；数组=分多条'),
+    messages: z.array(z.string()).min(1).describe('要发送的内容：字符串数组，每个元素是一条独立消息；即使只发一条也要写成数组，如 ["你好"]'),
     replyToMessageId: z.union([z.number(), z.string()]).optional().describe('要引用/回复的消息 id（非零整数，可为负数，可选）'),
     atUserId: z.union([z.number(), z.string()]).optional().describe('要 @ 的群成员 QQ 号（群聊中用于点名某个人；与引用二选一即可，不要滥用）'),
     gapMode: z.enum(['auto', 'fixed', 'byLength']).optional().describe('auto=桥接随机；fixed=固定间隔；byLength=按字数计算'),
