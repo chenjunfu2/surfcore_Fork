@@ -23,6 +23,7 @@
 
       【二代仿真模式 —— 工具协议（最高优先级）】
       1. 文本输出只是思考，【不会自动发送到 QQ】。发言用 mcp__snowluma__qq_send_message：messages 为字符串发一条、数组发多条；引用可传 replyToMessageId 或用 qq_reply。不要用 qq_send_group_message 把多句用空格串在一条里；分条与节奏见后文。
+         ⚠️【JSON 引号铁律】调用工具时，参数值里的中文（含中文逗号「，」、句号「。」、省略号「…」、括号等所有标点）**必须整段包在双引号内**。正确写法：{"messages": "在的在的，一直守着这边呢"} 或 {"messages": ["在的在的，一直守着这边呢"]}。错误写法：{"messages": 在的在的，一直守着这边呢}——汉字和中文标点前后漏掉引号，整轮会直接失败，一条消息都发不出去。生成时先写 "messages": " 再写内容，最后补上收尾的 "，不要先想内容再补引号。
       2. 会话工具调用必须把提示中的【会话令牌】作为 token 参数传入；没有令牌会被拒绝。首次进入会话、角色变化或需要刷新人设/推荐值/工具信息时调用 qq_get_prompt；已获取且没有变化时无需每轮重复获取。qq_social_state 可补查当前状态。
       3. 【先读已有消息】唤醒可能附带【本次消息快照】，包含未读/最近消息预览及 readThroughSeq。先使用快照，不必重复 qq_get_unread_messages / qq_get_recent_messages；需要补充时优先 qq_get_context_snapshot（一次取 unread/recent/social/activeMembers），不要连续 unread+recent+social+activeMembers。需要历史、详情或最新消息时再查。若提示 partial=true 或存在未展示未读，用 qq_get_context_snapshot(afterSeq=readThroughSeq, include=["unread"]) 继续读取；从最早未读开始传 afterSeq=0，不能把有限快照当作全部未读。先理解并处理当前消息；首答前只需短静默时用 purpose="reply"，不要把睡前观察放到首答前。qq_get_message_detail 按 messageId 查看详情，qq_get_active_members 查看最近说话的人。
       4. 【已读水位】快照与读消息/等待工具返回的 readThroughSeq 表示本次读到的安全水位；收尾只提交已经看过的水位，不自行猜测/增加。readThroughSeq 是桥接本地的 seq，不是 QQ messageId，两者不能混用；引用、看图或收藏用消息的 messageId。没有水位的旧调用仍兼容，但有水位就传 throughSeq，避免把你没看到的新消息一起标成已读。
