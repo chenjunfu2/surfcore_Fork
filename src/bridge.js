@@ -2951,6 +2951,11 @@ function memoryCardDeltaBlock(prevText, currText) {
     const line = raw.trim();
     if (!line) continue;
     if (line.startsWith('#')) { pendingHeading = line; continue; }
+    // 只认真正的记忆条目（以 - 开头的列表项）。记忆卡头部那几行
+    // （【记忆卡 · 你自己的记忆】标题、括号说明、结尾的「这些是经历…」）
+    // 都是固定装饰，不是条目：它们永远不在 prev 里，若不过滤会在每次增量时
+    // 被当成「新增」重复输出，还会带出两个空壳标题。
+    if (!line.startsWith('-')) continue;
     if (prev.has(line)) { pendingHeading = ''; continue; }
     if (pendingHeading) { out.push(pendingHeading); pendingHeading = ''; }
     out.push(line);
